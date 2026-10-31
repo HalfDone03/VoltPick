@@ -1,0 +1,8 @@
+# 统一用 LF：项目里 .cs/.ps1 都是 LF，别让 git 在检出时改成 CRLF
+* text=auto eol=lf
+
+# 二进制，不做换行转换
+*.exe binary
+*.ico binary
+*.png binary
+*.winmd binary

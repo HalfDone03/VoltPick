@@ -1,0 +1,15 @@
+# 临时测试产物：tests/ 下只保留真机布局核对脚本
+开发/tests/*
+!开发/tests/db-live_LiveLayout.cs
+
+# 开发过程中的临时件
+*.log
+*.tmp
+*.bak
+*.user
+.vs/
+bin/
+obj/
+
+# 内部界面重写说明（不入公开仓库）
+开发/设置界面重写提示词.md
