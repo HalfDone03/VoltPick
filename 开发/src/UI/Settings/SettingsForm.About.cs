@@ -10,12 +10,11 @@ namespace DeviceBattery
 {
     internal sealed partial class SettingsForm : Form
     {
+
         private void BuildAboutPage()
         {
-            TabPage page = _tabs.TabPages[4];
+            TabPage page = _tabs.TabPages[6];
 
-            // 关于和反馈合成一张卡：原来「反馈」卡只有邮箱和复制按钮两行，
-            // 单独占一个卡片标题和一个卡片间距，看着比内容还重。
             SettingsSection about = new SettingsSection("关于 " + AppInfo.DisplayName);
             _versionLabel = NewNote(AppInfo.DisplayName + " 是一个只在本机运行的托盘工具，用来看鼠标、键盘和耳机的电量。"
                 + "读数来自 HID、蓝牙 GATT 和 2.4G 接收器，不联网，也不上传任何数据。");
@@ -23,7 +22,19 @@ namespace DeviceBattery
             _authorLabel = NewPath();
             _authorLabel.Text = "作者：" + AppInfo.Author;
             _authorLabel.ForeColor = Theme.Text;
-            // 邮箱整行显示、直接当链接用：点一下就是写信，右边再放一个复制按钮。
+            // 主页链接：单行显示，点一下直接开浏览器。
+            _githubLabel = NewLink();
+            _githubLabel.Text = "GitHub：" + AppInfo.HomePageShort;
+            _githubLabel.Click += delegate { OpenLink(AppInfo.HomePage); };
+            about.AddRow(_versionLabel);
+            about.AddRow(_authorLabel);
+            about.AddRow(_githubLabel);
+            _about.Add(about);
+
+            SettingsSection feedback = new SettingsSection("反馈");
+            // 邮箱整行显示：以前和两个按钮挤在一行，标签列只有 96px，
+            // 而 “邮箱：3494384883@qq.com” 需要 151px，被折成了两行。
+            // 邮箱直接当链接用：点一下就是写信，省掉一个单独的按钮。
             _contactLabel = NewLink();
             _contactLabel.Text = "邮箱：" + AuthorContact;
             _contactLabel.Click += delegate { OpenMail(); };
@@ -32,25 +43,9 @@ namespace DeviceBattery
             {
                 try { Clipboard.SetText(AuthorContact); } catch (Exception) { }
             };
-            // 主页链接：单行显示，点一下直接开浏览器。
-            _githubLabel = NewLink();
-            _githubLabel.Text = "GitHub：" + AppInfo.HomePageShort;
-            _githubLabel.Click += delegate { OpenLink(AppInfo.HomePage); };
-            about.AddRow(_versionLabel);
-            about.AddRow(_authorLabel);
-            about.AddRow(_contactLabel, _copyContact);
-            about.AddRow(_githubLabel);
-            _about.Add(about);
-
-            // 支持范围原来是单独一个页签、十三条逐品牌说明，翻完要滚三屏。
-            // 压成三句放在这一页，逐品牌清单留在 README 里。
-            SettingsSection support = new SettingsSection("支持范围");
-            support.AddRow(NewNote("能读到：标准 HID 电池页（0x20 / 0x24）、罗技 HID++ 2.0、雷蛇、赛睿、华硕 ROG、"
-                + "HyperX 与 JBL、WLmouse / Lamzu / G-Wolves、MCHOSE、Pulsar / VXE / Hitscan、ATK 2.4G、蓝牙 LE。"));
-            support.AddRow(NewNote("读不到：只支持经典蓝牙 HFP 的耳机、有线键鼠、"
-                + "不暴露厂商电量页的 2.4G 接收器，以及海盗船、Keychron 等尚未实现的私有协议。"));
-            support.AddRow(NewNote("逐品牌清单与显示规则见 README。"));
-            _about.Add(support);
+            feedback.AddRow(_contactLabel);
+            feedback.AddRow(_copyContact);
+            _about.Add(feedback);
 
             SettingsSection data = new SettingsSection("数据与诊断");
             _dataPath = NewPath();
@@ -83,5 +78,6 @@ namespace DeviceBattery
             _about.Add(data);
 
             AddSections(page, _about);
-        }    }
+        }
+    }
 }

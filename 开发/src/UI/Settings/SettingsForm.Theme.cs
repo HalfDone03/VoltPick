@@ -36,7 +36,16 @@ namespace DeviceBattery
                 ForeColor = Theme.Text;
                 if (_bottom != null)
                 {
-                    _bottom.BackColor = Theme.Background;
+                if (_supportView != null)
+                {
+                    _supportView.BackColor = Theme.Background;
+                    _supportView.Invalidate();
+                }
+                if (_supportContent != null)
+                {
+                    _supportContent.BackColor = Theme.Background;
+                }
+                _bottom.BackColor = Theme.Background;
                     // 底部三个自绘按钮（取消/应用/确定）不在标签页里，原来的重刷流程走不到它们；
                     // 换主题后它们仍然贴着自己画出来的旧底色，看起来像按钮外围多了一圈方框。
                     RecolorTree(_bottom);

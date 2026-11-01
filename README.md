@@ -30,7 +30,7 @@ Version **v1.0**.
 * **托盘图标样式**：图标不再画底色块，只有数字（铺满 16×16 托盘位置）；「图标颜色」直接就是数字颜色，笔画实心、不加描边（描边在 16px 下会把字糊成一团）；数字按长方形比例铺满整个槽位，横向最多拉伸 1.3 倍。数字大小分「不显示数字（留点）/ 较小 / 标准 / 较大」四档（选「不显示数字」时只留一个小圆点，免得托盘上完全看不见、点不到），样式分「柔和（细窄）/ 经典（高大）/ 圆润（扁矮）」三种。数字字体可在设置里单独选（跟随样式 / 粗黑 / 半粗 / 常规加粗 / 雅黑加粗 / Verdana / Tahoma / Arial Black / Bahnschrift / Impact，默认「跟随样式」，缺字体时自动退回 Segoe UI，不会画成空白图标）。
 * **主题**：跟随系统 / 浅色 / 深色，作用于面板、设置和历史窗口。
 
-![设置 → 常规](开发/assets/screenshots/settings-general.png)
+![设置 → 通用](开发/assets/screenshots/settings-general.png)
 
 ![设置 → 设备低电阈值](开发/assets/screenshots/settings-devices.png)
 

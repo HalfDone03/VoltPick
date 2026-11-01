@@ -140,8 +140,8 @@ namespace DeviceBattery
             _factor = factor <= 0.1f ? 1f : factor;
             int padX = UiScale.Scale(14, _factor);
             // 标题区 = 上留白 + 标题实际字高 + 与正文的间距，保证粗体字底不被压住。
-            int titleH = _titleFont.Height + UiScale.Scale(18, factor);
-            int gapY = UiScale.Scale(7, factor);
+            int titleH = _titleFont.Height + UiScale.Scale(22, factor);
+            int gapY = UiScale.Scale(8, factor);
             int gapX = UiScale.Scale(12, factor);
             int bottom = UiScale.Scale(12, factor);
             int inner = Math.Max(UiScale.Scale(120, factor), width - padX * 2);
