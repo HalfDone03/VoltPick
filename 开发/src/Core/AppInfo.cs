@@ -20,9 +20,9 @@ namespace DeviceBattery
         public const string Contact = "3494384883@qq.com";
 
         /// <summary>GitHub 主页，作者行里的链接直接打开它。</summary>
-        public const string HomePage = "https://github.com/HalfDone03";
+        public const string HomePage = "https://github.com/HalfDone03/VoltPick";
 
         /// <summary>GitHub 的简短写法，省版面用（界面里就显示这个）。</summary>
-        public const string HomePageShort = "github.com/HalfDone03";
+        public const string HomePageShort = "github.com/HalfDone03/VoltPick";
     }
 }

@@ -924,9 +924,12 @@ namespace DeviceBattery
             DrawChip(g, new Rectangle(chipLeft, rect.Top + Px(18), chipWidth, Px(18)), transport);
 
             int percent = device.PercentOrZero;
-            string big = device.HasValue ? percent.ToString() : "—";
+            // 「不支持读取」的设备不报数字：哪怕还留着上一次的读数，
+            // 旁边已经写着读不到，上面再顶个 0% 会让人以为电量真掉到 0 了。
+            bool showPercent = device.HasValue && device.Status != DeviceStatus.Unsupported;
+            string big = showPercent ? percent.ToString() : "—";
             Rectangle bigRect = new Rectangle(nameLeft, rect.Top + Px(41), Px(110), Px(34));
-            DrawPercent(g, bigRect, big, device.HasValue, accent, device.Status == DeviceStatus.Charging);
+            DrawPercent(g, bigRect, big, showPercent, accent, device.Status == DeviceStatus.Charging);
 
             // 状态文字和电量数字同一行（原来它压在进度条那一行的右边，下面离明细只剩 2px）。
             string status = StatusLine(device);
@@ -938,7 +941,7 @@ namespace DeviceBattery
             // 进度条铺满整行：原来只有 172px，右半张卡片空着，像没排完版。
             Rectangle bar = new Rectangle(nameLeft, rect.Top + Px(79),
                 Math.Max(Px(40), rowRight - nameLeft), Px(6));
-            DrawBar(g, bar, device.HasValue ? percent : 0, accent,
+            DrawBar(g, bar, showPercent ? percent : 0, accent,
                 device.Status == DeviceStatus.Unsupported || device.Status == DeviceStatus.Offline ||
                 device.Status == DeviceStatus.BluetoothOff);
 

@@ -172,7 +172,11 @@ namespace DeviceBattery
         /// <summary>关窗时记住用户拖出来的窗口大小。</summary>
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            if (WindowState == FormWindowState.Normal && ClientSize.Width > 0 && ClientSize.Height > 0)
+            // 只有用户真的拖过窗口才记住大小。原来无条件写一遍，
+            // 构造里一看到「存过尺寸」就把窗口当成用户定过尺寸，
+            // 按页签内容自动定高从第二次打开设置窗口起就永久失效了。
+            if (_userSized && WindowState == FormWindowState.Normal &&
+                ClientSize.Width > 0 && ClientSize.Height > 0)
             {
                 AppSettings.Current.SettingsWidth = ClientSize.Width;
                 AppSettings.Current.SettingsHeight = ClientSize.Height;
