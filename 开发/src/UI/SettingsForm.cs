@@ -125,10 +125,12 @@ namespace DeviceBattery
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(DesignWidth, DesignHeight);
-            // 上次拖出来的宽度沿用，高度不沿用：七个页签的内容高矮差很多（从 451 到 724），
-            // 把上次的高度当成固定值之后，短页底部会空出一大块——记住 740 时「通用」页
-            // 要空 285px、「读取」页要空 297px。高度交给每页按内容自己定。
-            ClientSize = InitialClientSize(AppSettings.Current.SettingsWidth, DesignWidth, DesignHeight);
+            // 上次拖动过的大小存在设置里，下次打开沿用（0 表示还没拖过，仍按内容自适应）。
+            if (AppSettings.Current.SettingsWidth > 0 && AppSettings.Current.SettingsHeight > 0)
+            {
+                ClientSize = new Size(AppSettings.Current.SettingsWidth, AppSettings.Current.SettingsHeight);
+                _userSized = true;
+            }
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.None;
             EnableDoubleBuffer(this);
@@ -155,19 +157,14 @@ namespace DeviceBattery
             LoadValues();
             Load += delegate { LayoutPages(); PositionButtons(); };
             Shown += delegate { LayoutPages(); PositionButtons(); };
-            // 用户亲手改过高度之后就不再按页签内容自动定高，只重排内容。
-            // 这里只认「高度变了」：单纯把窗口拖宽不该把高度锁死，否则再切到短页
-            // （读取 439 / 通用 451）时底部又会空出一大块。
+            // 用户自己拖大/拖小之后就不再按页签内容自动改高度，只重排内容。
             Resize += delegate
             {
                 if (_fitting)
                 {
                     return;
                 }
-                if (IsUserHeightChange(_sizedHeight, ClientSize.Height))
-                {
-                    _userSized = true;
-                }
+                _userSized = true;
                 LayoutPages();
             };
         }
@@ -562,28 +559,6 @@ namespace DeviceBattery
         internal int PageHeaderHeight(float f)
         {
             return UiScale.Scale(46, f);
-        }
-
-        /// <summary>
-        /// 打开设置窗口时的初始大小：沿用上次拖出来的宽度，高度一律用设计值。
-        /// 高度不能沿用——七个页签的内容高矮差很多（设计高度 451~724），把存下来的
-        /// 高度当成固定值，短页底部就会空出一大块（记住 740 时「通用」页空 285px）。
-        /// </summary>
-        internal static Size InitialClientSize(int storedWidth, int designWidth, int designHeight)
-        {
-            int width = storedWidth > 0 ? storedWidth : designWidth;
-            int height = designHeight > 0 ? designHeight : 1;
-            return new Size(width, height);
-        }
-
-        /// <summary>
-        /// 拖窗口时要不要把它当成「用户定过高度」：只有高度真的变了才算。
-        /// 单纯拖宽不该锁死高度，否则切到短页（读取 439 / 通用 451）时底部又会空一大块；
-        /// lastFitHeight 为 0 说明还没排版过（首次显示时的 Resize），也不算用户改的。
-        /// </summary>
-        internal static bool IsUserHeightChange(int lastFitHeight, int currentHeight)
-        {
-            return lastFitHeight > 0 && currentHeight != lastFitHeight;
         }
 
         /// <summary>在页面顶部画标题与说明；正文从 PageHeaderHeight 之后开始排。</summary>

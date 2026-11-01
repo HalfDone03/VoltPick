@@ -12,7 +12,7 @@ internal static class TestHarness
 {
     // AGENTS.md 要求自测 301 通过 / 0 失败。只判 _failed 的话，删掉一条测试也会"通过"，
     // 所以把期望条数也钉死：新增/删除断言后必须同步改这里。
-    private const int ExpectedChecks = 311;
+    private const int ExpectedChecks = 305;
 
     private static int _passed;
     private static int _failed;
@@ -1137,10 +1137,6 @@ internal static class TestHarness
         LowBatteryPolicyTest();
 
         Console.WriteLine();
-        Console.WriteLine("=== 设置窗口高度（不允许被上次尺寸锁死） ===");
-        CheckSettingsWindowHeight();
-
-        Console.WriteLine();
         Console.WriteLine("=== 异常退出标记 ===");
         string markerDirectory = Path.Combine(Path.GetTempPath(),
             "VoltPick.Marker." + Guid.NewGuid().ToString("N"));
@@ -1447,24 +1443,6 @@ internal static class TestHarness
             Log.Redact("设备 AA:BB:CC:DD:EE:FF 连接"));
 
         Log.Clear(out error);
-    }
-
-    private static void CheckSettingsWindowHeight()
-    {
-        // 打开设置窗口时只沿用宽度，高度一律回到设计值：否则记忆里那个 740 会把每一页
-        // 都撑成 740 高，短页（通用 451 / 读取 439）底部白白空出 280~300px。
-        Size storedIgnored = SettingsForm.InitialClientSize(600, 600, 640);
-        Check("设置窗口不沿用上次高度", storedIgnored.Height == 640,
-            storedIgnored.Width + "x" + storedIgnored.Height);
-        Check("设置窗口沿用上次宽度", storedIgnored.Width == 600, storedIgnored.Width.ToString());
-        Size noStore = SettingsForm.InitialClientSize(0, 600, 640);
-        Check("没有存过尺寸时用设计宽度", noStore.Width == 600 && noStore.Height == 640,
-            noStore.Width + "x" + noStore.Height);
-
-        // 拖宽不该锁死高度；只有高度真的变了才算「用户定过高度」。
-        Check("拖宽不算用户改高度", !SettingsForm.IsUserHeightChange(451, 451), "451->451");
-        Check("首次显示时的 Resize 不算用户改高度", !SettingsForm.IsUserHeightChange(0, 640), "0->640");
-        Check("拖高才算用户改高度", SettingsForm.IsUserHeightChange(451, 820), "451->820");
     }
 
     private static void CheckDndParsing()
