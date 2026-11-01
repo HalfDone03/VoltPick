@@ -392,7 +392,7 @@ namespace DeviceBattery
             else
             {
                 int baseSize;
-                PlainDigitFont(style, digitPercent, text.Length >= 3, out digitFamily, out digitWeight, out baseSize);
+                PlainDigitFont(style, digitPercent, text.Length >= 3, canvas, out digitFamily, out digitWeight, out baseSize);
                 top = (int)Math.Round(baseSize * slotScale);
 
             }
@@ -476,7 +476,7 @@ namespace DeviceBattery
         /// 单比特提示下字形宽度会随字号整像素跳变，所以每一档都挑「宽度正好铺满、高度按档递增」
         /// 的那一款，既保住原来的大小，也不会因为缩放出现灰边。
         /// </summary>
-        private static void PlainDigitFont(string style, int digitPercent, bool longText, out string family,
+        private static void PlainDigitFont(string style, int digitPercent, bool longText, int canvas, out string family,
             out FontStyle weight, out int baseSize)
         {
             int level = digitPercent <= 66 ? 1 : (digitPercent <= 80 ? 2 : 3);
@@ -557,6 +557,14 @@ namespace DeviceBattery
             }
 
             // 柔和：Segoe UI 常规体，笔画细、字腔大，和另外两档的粗黑感拉开。
+            // 但 16/20px 的槽位缩回去后笔芯只剩一成多实心像素，看着发虚；小尺寸换成
+            // Semibold 把笔画加厚一档，24px 以上仍保持常规体的轻盈。
+            if (canvas <= 20 && Pick("Segoe UI Semibold", FontStyle.Regular, out family, out weight))
+            {
+                baseSize = level == 1 ? 12 : (level == 2 ? 14 : 16);
+                return;
+            }
+
             if (Pick("Segoe UI", FontStyle.Regular, out family, out weight))
             {
                 baseSize = level == 1 ? 12 : (level == 2 ? 14 : 17);

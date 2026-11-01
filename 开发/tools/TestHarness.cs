@@ -12,7 +12,7 @@ internal static class TestHarness
 {
     // AGENTS.md 要求自测 301 通过 / 0 失败。只判 _failed 的话，删掉一条测试也会"通过"，
     // 所以把期望条数也钉死：新增/删除断言后必须同步改这里。
-    private const int ExpectedChecks = 302;
+    private const int ExpectedChecks = 303;
 
     private static int _passed;
     private static int _failed;
@@ -271,6 +271,36 @@ internal static class TestHarness
             }
         }
         Check("托盘数字带抗锯齿灰边", digitSoftEdges >= 20, digitSoftEdges + " 个灰边像素");
+
+        // 16px 是 100% DPI 下托盘槽位的真实尺寸。柔和那档原本用 Segoe UI 常规体，
+        // 缩回 16px 后笔芯只剩一成多实心像素，肉眼看是一团灰雾；小尺寸换 Semibold 后
+        // 实心比例翻倍。这里卡一个下限，防止以后有人把字重又调回去。
+        int digit16Ink = 0;
+        int digit16Core = 0;
+        using (Icon icon = IconFactory.BuildDigits(16, "80", Color.White, false, 80, false, "soft"))
+        using (Bitmap bitmap = icon.ToBitmap())
+        {
+            for (int y = 0; y < bitmap.Height; y++)
+            {
+                for (int x = 0; x < bitmap.Width; x++)
+                {
+                    int alpha = bitmap.GetPixel(x, y).A;
+                    if (alpha == 0)
+                    {
+                        continue;
+                    }
+
+                    digit16Ink++;
+                    if (alpha >= 240)
+                    {
+                        digit16Core++;
+                    }
+                }
+            }
+        }
+        double digit16Solid = digit16Ink == 0 ? 0.0 : digit16Core / (double)digit16Ink;
+        Check("16px 托盘数字笔芯不发虚", digit16Solid >= 0.25,
+            string.Format("{0:P1}（{1}/{2}）", digit16Solid, digit16Core, digit16Ink));
 
         // 图标文字测量必须在确定主题下进行：前面的 Theme.Apply(savedThemeMode)
         // 让主题取决于本机系统设置，浅色下深色文字与浅色背景的暗像素判定会失真。
