@@ -129,7 +129,6 @@ namespace DeviceBattery
             _outsideTimer.Tick += delegate { CheckOutsideClick(); };
         }
 
-
         public void ApplyTheme()
         {
             BackColor = Theme.Background;

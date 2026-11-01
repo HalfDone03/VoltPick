@@ -154,7 +154,6 @@ namespace DeviceBattery
             }
         }
 
-
         private byte QueryFeatureIndex(HidConnection connection, byte deviceIndex, ushort featureId)
         {
             byte[] request = BuildGetFeature(deviceIndex, featureId);

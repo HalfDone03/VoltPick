@@ -490,7 +490,6 @@ namespace DeviceBattery
                 : Color.White;
         }
 
-
         public static double RelativeLuminance(Color color)
         {
             double r = Linear(color.R);

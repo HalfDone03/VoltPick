@@ -1,3 +1,8 @@
+// 兼容性探针：读系统版本与 HID/WinRT 相关能力，确认换机器后能正常启动和读设备。
+//
+// 用法（不参与 build.ps1 / test.ps1）：照 开发\test.ps1 里 Build-Harness 的引用与参数自己编一次，
+//   把 /main: 换成 CompatCheck、源文件换成 tools\CompatCheck.cs、产物放 开发\tests\，再直接运行。
+//
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;

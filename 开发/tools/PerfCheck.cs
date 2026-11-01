@@ -1,3 +1,8 @@
+// 性能探针：量面板、设置页、历史页的构造与重绘耗时（毫秒），调性能时手动跑。
+//
+// 用法（不参与 build.ps1 / test.ps1）：照 开发\test.ps1 里 Build-Harness 的引用与参数自己编一次，
+//   把 /main: 换成 PerfCheck、源文件换成 tools\PerfCheck.cs、产物放 开发\tests\，再直接运行。
+//
 using System;
 using System.Diagnostics;
 using System.Drawing;

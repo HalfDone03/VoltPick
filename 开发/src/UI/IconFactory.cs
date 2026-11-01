@@ -827,7 +827,6 @@ namespace DeviceBattery
             return (float)hard / ink;
         }
 
-
         private static void DrawPlainDot(Graphics graphics, float s, Color color, bool dim)
         {
             float size = Math.Max(2f, s * 0.34f);

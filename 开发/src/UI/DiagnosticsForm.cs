@@ -310,7 +310,6 @@ namespace DeviceBattery
             try { DwmSetWindowAttribute(Handle, 19, ref dark, sizeof(int)); } catch (Exception) { }
         }
 
-
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 

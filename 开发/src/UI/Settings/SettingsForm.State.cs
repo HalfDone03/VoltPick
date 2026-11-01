@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-
 namespace DeviceBattery
 {
     internal sealed partial class SettingsForm : Form

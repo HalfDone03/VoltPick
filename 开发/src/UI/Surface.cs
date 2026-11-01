@@ -17,7 +17,6 @@ namespace DeviceBattery
         public const int CardRadius = 10;
         public const int ButtonRadius = 6;
 
-
         public static int Px(Control control, int value)
         {
             return UiScale.Px(control, value);

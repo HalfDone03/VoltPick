@@ -36,7 +36,6 @@ namespace DeviceBattery
             SetStyle(ControlStyles.ResizeRedraw, true);
         }
 
-
         /// <summary>加入一行：一个或多个控件横排（第一个通常是标签）。</summary>
         public void AddRow(params Control[] row)
         {

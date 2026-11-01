@@ -131,7 +131,6 @@ namespace DeviceBattery
             new JblProtocol()
         };
 
-
         public List<VendorDevice> Find(List<HidDeviceInfo> interfaces)
         {
             List<VendorDevice> found = new List<VendorDevice>();

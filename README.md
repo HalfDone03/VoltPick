@@ -36,7 +36,7 @@ Version **v1.0**.
 
 ## 作者与问题反馈
 
-**HalfDone** · 邮箱：3494384883@qq.com · GitHub：<https://github.com/HalfDone03>
+**HalfDone** · 邮箱：3494384883@qq.com · GitHub：<https://github.com/HalfDone03/VoltPick>
 
 ![设置 → 关于](开发/assets/screenshots/settings-about.png)
 
@@ -64,12 +64,12 @@ Version **v1.0**.
 ├─ AGENTS.md             本项目的开发约定
 └─ 开发/                 全部源码与工具
    ├─ src/               源码（C# 5，.NET Framework 4.8）
-   ├─ tools/             测试工具源码
+   ├─ tools/             测试与图标工具源码
    ├─ tests/             真机布局核对脚本（db-live_LiveLayout.cs）
    ├─ lib/winmd/         编译所需的 WinRT 引用
    ├─ assets/            图标 app.ico、源图 icon-source.jpg、截图
    ├─ build.ps1          重新编译 exe（输出到上一层目录）
-   └─ test.ps1           重建 exe 并跑全部自测（305 条断言 + 4 个冒烟程序）
+   └─ test.ps1           重建 exe 并跑全部自测（305 条断言 + 3 个冒烟程序）
 ```
 
 开发时改 `开发/`，`build.ps1` 把 exe 输出到最外层（也就是本文件旁边）。不做打包发布，只保留一个 exe。
@@ -87,9 +87,9 @@ powershell -ExecutionPolicy Bypass -File .\test.ps1
 
 不需要安装 SDK，使用 Windows 自带的 .NET Framework 4.8 `csc.exe`。WinRT 引用在 `lib/winmd/`。
 
-`test.ps1` 会先重建 exe，再依次跑 305 条断言和 4 个冒烟程序（托盘、历史、面板滚动）。断言条数由 `TestHarness` 里的 `ExpectedChecks` 核对，少跑一条也算失败；任何一步失败都会以非 0 退出。临时 exe 都写在 `tests/` 下，结束时统一删除。
+`test.ps1` 会先重建 exe，再依次跑 305 条断言和 3 个冒烟程序（托盘、历史、面板滚动）。断言条数由 `TestHarness` 里的 `ExpectedChecks` 核对，少跑一条也算失败；任何一步失败都会以非 0 退出。临时 exe 都写在 `tests/` 下，结束时统一删除。
 
-pp.ico` 由 `assets/icon-source.jpg` 生成十档尺寸（16/20/24/32/40/48/64/96/128/256）：线性光下逐级 2×2 减半 → 带预滤波的 Catmull-Rom 重采样 → 双边保边平滑 → 5×5 二项式掩膜锐化 → 4×4 超采样圆角，小尺寸另走注意力裁切与去噪；换图标时改源图，再手动跑一次 `tools/MakeIcon.cs`（不参与 build/test，命令行写在文件头注释里）。
+`app.ico` 由 `assets/icon-source.jpg` 生成十档尺寸（16/20/24/32/40/48/64/96/128/256）：线性光下逐级 2×2 减半 → 带预滤波的 Catmull-Rom 重采样 → 双边保边平滑 → 5×5 二项式掩膜锐化 → 4×4 超采样圆角，小尺寸另走注意力裁切与去噪；换图标时改源图，再手动跑一次 `tools/MakeIcon.cs`（不参与 build/test，命令行写在文件头注释里）。
 
 **更新迭代约定**：正在运行的 `VoltPick.exe` 会锁住输出文件导致 `error CS0016`。重新构建前直接结束该进程即可（用户已明确授权，不需要先询问）：
 

@@ -12,7 +12,6 @@ namespace DeviceBattery
         /// <summary>界面里统一显示的版本文本，例如 "VoltPick v1.0"。</summary>
         public const string DisplayName = "VoltPick v" + Version;
 
-
         /// <summary>作者署名。设置页、程序集信息和文档都用这一处。</summary>
         public const string Author = "HalfDone";
 

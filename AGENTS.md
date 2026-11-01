@@ -21,4 +21,6 @@
 - 设置页布局由 `SettingsSection.ApplyLayout` 统一分配宽度：标签占 `labelColumn`，按钮保持自身宽度，输入控件平分剩余空间。
 - 页面宽度以 `_tabs.DisplayRectangle` 为准（`TabPage.ClientSize` 未显示时是 0）。
 - 源文件统一 LF（不要 CRLF）。`.cs` 不加 BOM —— `csc` 用 `/codepage:65001` 读源码，不需要 BOM。`.ps1` 必须带 UTF-8 BOM（`build.ps1`、`test.ps1` 都有）：Windows PowerShell 5.1 读无 BOM 脚本会按 GBK 解码，中文注释立刻变乱码乃至语法错误；用编辑器改完脚本要确认 BOM 还在。
+- 手动工具放 `开发\tools\`，不参与 `build.ps1`/`test.ps1`，用法写在各自文件头注释里：`MakeIcon.cs` 生成 app.ico，`PerfCheck.cs` 量各页面耗时，`CompatCheck.cs` 查运行环境。
+- 代码风格：成员之间只留一行空行，不写行尾空白、不用 Tab；单行超过 200 字符优先换行（P/Invoke 声明除外）。
 - 产品硬规则：读不到电量的设备不显示（只有用户自己点「显示」显式放开的才出现，且卡片必须写清读不到的原因）。
