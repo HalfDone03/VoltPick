@@ -66,6 +66,7 @@ namespace DeviceBattery
         private ComboBox _iconFont;
         private CheckBox _autoColor;
         private SurfaceButton _colorButton;
+        private IconStylePreview _iconPreview;
         private CheckBox _showVoltage;
 
         private ComboBox _interval;

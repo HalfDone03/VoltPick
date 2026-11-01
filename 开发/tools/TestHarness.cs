@@ -12,7 +12,7 @@ internal static class TestHarness
 {
     // AGENTS.md 要求自测 301 通过 / 0 失败。只判 _failed 的话，删掉一条测试也会"通过"，
     // 所以把期望条数也钉死：新增/删除断言后必须同步改这里。
-    private const int ExpectedChecks = 303;
+    private const int ExpectedChecks = 305;
 
     private static int _passed;
     private static int _failed;
@@ -301,6 +301,19 @@ internal static class TestHarness
         double digit16Solid = digit16Ink == 0 ? 0.0 : digit16Core / (double)digit16Ink;
         Check("16px 托盘数字笔芯不发虚", digit16Solid >= 0.25,
             string.Format("{0:P1}（{1}/{2}）", digit16Solid, digit16Core, digit16Ink));
+
+        // 设置页的图标预览控件：高度由它自己按缩放系数算，SettingsSection 排版时直接读，
+        // 所以必须先确认「基准高度」和「随缩放长高」两件事都成立，否则高 DPI 下会被裁掉一截。
+        using (IconStylePreview preview = new IconStylePreview())
+        {
+            preview.ApplyScale(1f);
+            int previewBase = preview.Height;
+            preview.ApplyScale(1.5f);
+            int previewScaled = preview.Height;
+            Check("图标预览基准高度 88", previewBase == 88, previewBase.ToString());
+            Check("图标预览随缩放长高", previewScaled >= previewBase + 40,
+                string.Format("{0} -> {1}", previewBase, previewScaled));
+        }
 
         // 图标文字测量必须在确定主题下进行：前面的 Theme.Apply(savedThemeMode)
         // 让主题取决于本机系统设置，浅色下深色文字与浅色背景的暗像素判定会失真。

@@ -286,6 +286,13 @@ namespace DeviceBattery
                     else
                     {
                         c.Width = widths[i];
+                        // 预览控件自己决定高度（槽位条 + 标注按缩放系数算），
+                        // 必须在读取高度之前按当前系数重建，否则高 DPI 下仍是 100% 的高度。
+                        IconStylePreview preview = c as IconStylePreview;
+                        if (preview != null)
+                        {
+                            preview.ApplyScale(factor);
+                        }
                         Panel host = c as Panel;
                         if (host != null)
                         {
