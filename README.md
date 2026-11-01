@@ -8,11 +8,11 @@ Version **v1.0**.
 
 > 以下为中文使用说明（The Chinese manual starts below）。
 
-![设备面板（深色）](assets/screenshots/panel-dark.png)
+![设备面板（深色）](开发/assets/screenshots/panel-dark.png)
 
-![设备面板（浅色）](assets/screenshots/panel-light.png)
+![设备面板（浅色）](开发/assets/screenshots/panel-light.png)
 
-![电量历史与趋势](assets/screenshots/history.png)
+![电量历史与趋势](开发/assets/screenshots/history.png)
 
 ## 快速开始
 
@@ -30,17 +30,17 @@ Version **v1.0**.
 * **托盘图标样式**：图标不再画底色块，只有数字（铺满 16×16 托盘位置）；「图标颜色」直接就是数字颜色，笔画实心、不加描边（描边在 16px 下会把字糊成一团）；数字按长方形比例铺满整个槽位，横向最多拉伸 1.3 倍。数字大小分「不显示数字（留点）/ 较小 / 标准 / 较大」四档（选「不显示数字」时只留一个小圆点，免得托盘上完全看不见、点不到），样式分「柔和（细窄）/ 经典（高大）/ 圆润（扁矮）」三种。数字字体可在设置里单独选（跟随样式 / 粗黑 / 半粗 / 常规加粗 / 雅黑加粗 / Verdana / Tahoma / Arial Black / Bahnschrift / Impact，默认「跟随样式」，缺字体时自动退回 Segoe UI，不会画成空白图标）。
 * **主题**：跟随系统 / 浅色 / 深色，作用于面板、设置和历史窗口。
 
-![设置 → 通用](assets/screenshots/settings-general.png)
+![设置 → 通用](开发/assets/screenshots/settings-general.png)
 
-![设置 → 设备低电阈值](assets/screenshots/settings-devices.png)
+![设置 → 设备低电阈值](开发/assets/screenshots/settings-devices.png)
 
 ## 作者与问题反馈
 
 **HalfDone** · 邮箱：3494384883@qq.com · GitHub：<https://github.com/HalfDone03>
 
-![设置 → 关于](assets/screenshots/settings-about.png)
+![设置 → 关于](开发/assets/screenshots/settings-about.png)
 
-![诊断信息](assets/screenshots/diagnostics.png)
+![诊断信息](开发/assets/screenshots/diagnostics.png)
 
 遇到问题或发现 bug，可以按下面的方式反馈：
 
@@ -60,19 +60,19 @@ Version **v1.0**.
 ```text
 电量监测/
 ├─ VoltPick.exe          开发版成品，双击即用
-├─ 开发/                 全部源码与工具
-│  ├─ src/               源码（C# 5，.NET Framework 4.8）
-│  ├─ tools/             测试工具源码
-│  ├─ tests/             真机布局核对脚本（db-live_LiveLayout.cs）
-│  ├─ lib/winmd/         编译所需的 WinRT 引用
-│  ├─ assets/            图标与截图（app.ico 编译要用）
-│  ├─ build.ps1          重新编译 exe（输出到上一层目录）
-│  ├─ test.ps1           重建 exe 并跑全部自测（298 条断言 + 4 个冒烟程序）
-│  └─ README.md          本文件
-└─ AGENTS.md            本项目的开发约定
+├─ README.md             本文件（程序启动时按 exe 同目录读取）
+├─ AGENTS.md             本项目的开发约定
+└─ 开发/                 全部源码与工具
+   ├─ src/               源码（C# 5，.NET Framework 4.8）
+   ├─ tools/             测试工具源码
+   ├─ tests/             真机布局核对脚本（db-live_LiveLayout.cs）
+   ├─ lib/winmd/         编译所需的 WinRT 引用
+   ├─ assets/            图标与截图（app.ico 编译要用）
+   ├─ build.ps1          重新编译 exe（输出到上一层目录）
+   └─ test.ps1           重建 exe 并跑全部自测（298 条断言 + 4 个冒烟程序）
 ```
 
-开发时改 `开发/`，`build.ps1` 把 exe 输出到最外层。不做打包发布，只保留一个 exe。
+开发时改 `开发/`，`build.ps1` 把 exe 输出到最外层（也就是本文件旁边）。不做打包发布，只保留一个 exe。
 
 ## 构建与测试
 
