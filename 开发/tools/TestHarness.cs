@@ -10,9 +10,9 @@ using DeviceBattery;
 
 internal static class TestHarness
 {
-    // AGENTS.md 要求自测 298 通过 / 0 失败。只判 _failed 的话，删掉一条测试也会"通过"，
+    // AGENTS.md 要求自测 301 通过 / 0 失败。只判 _failed 的话，删掉一条测试也会"通过"，
     // 所以把期望条数也钉死：新增/删除断言后必须同步改这里。
-    private const int ExpectedChecks = 298;
+    private const int ExpectedChecks = 301;
 
     private static int _passed;
     private static int _failed;
@@ -1167,6 +1167,16 @@ internal static class TestHarness
             !HidEnumerator.TryResolveBatteryUsage(HidEnumerator.ParseValueCaps(rawOtherPage, 0), out resolvedUsage),
             "page 0x0001");
 
+        Console.WriteLine();
+        Console.WriteLine("=== 窗口图标 ===");
+        // 标题栏图标只能从 exe 里取（build.ps1 的 /win32icon 把 app.ico 打进去），
+        // 所以这里钉两件事：图标取得回来、Apply 之后窗口用的是同一个对象而不是每次新做一份。
+        Check("AppIcon.Window 不为空", AppIcon.Window != null, "icon");
+        Check("AppIcon.Small 不为空", AppIcon.Small != null, "small icon");
+        System.Windows.Forms.Form iconProbe = new System.Windows.Forms.Form();
+        AppIcon.Apply(iconProbe);
+        Check("窗口套上了程序图标", object.ReferenceEquals(iconProbe.Icon, AppIcon.Window), "form.Icon");
+        iconProbe.Dispose();
         DeviceState clone = mouse.Clone();
         clone.LastReading.Percent = 10;
         Check("克隆不共享读数", mouse.PercentOrZero == 45, mouse.PercentOrZero.ToString());

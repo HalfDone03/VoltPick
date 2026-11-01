@@ -116,6 +116,8 @@ namespace DeviceBattery
         {
             _snapshot = snapshot ?? new BatterySnapshot();
             Text = "VoltPick · 设置";
+            // 标题栏左上角那个图标：从 exe 自带的图标资源取，跟资源管理器里看到的一致。
+            AppIcon.Apply(this);
             // 设置是独立窗口：有标题栏、可以用鼠标拖边框改大小，面板自己继续留在右下角。
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = false;

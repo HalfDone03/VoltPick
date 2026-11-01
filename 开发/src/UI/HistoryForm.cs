@@ -38,6 +38,7 @@ namespace DeviceBattery
         {
             _selectedId = initialDeviceId;
             Text = "VoltPick · 电量历史";
+            AppIcon.Apply(this);
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(DesignWidth, DesignHeight);
             MinimumSize = new Size(DesignMinWidth, DesignMinHeight);

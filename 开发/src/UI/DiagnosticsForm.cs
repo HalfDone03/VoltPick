@@ -30,6 +30,7 @@ namespace DeviceBattery
         {
             _snapshot = snapshot ?? new BatterySnapshot();
             Text = "VoltPick · 诊断信息";
+            AppIcon.Apply(this);
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(DesignWidth, DesignHeight);
             MinimumSize = new Size(DesignMinWidth, DesignMinHeight);
