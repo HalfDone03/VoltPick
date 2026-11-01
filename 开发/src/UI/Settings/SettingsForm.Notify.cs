@@ -10,10 +10,9 @@ namespace DeviceBattery
 {
     internal sealed partial class SettingsForm : Form
     {
-
         private void BuildNotifyPage()
         {
-            TabPage page = _tabs.TabPages[3];
+            TabPage page = _tabs.TabPages[2];
 
             SettingsSection low = new SettingsSection("低电量提醒");
             _lowWarn = NewCheck("低于阈值时弹通知");
@@ -40,13 +39,12 @@ namespace DeviceBattery
             range.Controls.Add(to);
             range.Controls.Add(_dndEnd);
             dnd.AddRow(_dnd);
-            dnd.AddRow(NewLabel("时段", 96), range);
+            // 格式写进标签里，省掉下面那句整行说明。
+            dnd.AddRow(NewLabel("时段（时:分）", 96), range);
             _fullscreen = NewCheck("全屏时也不弹提醒");
             dnd.AddRow(_fullscreen);
-            dnd.AddRow(NewNote("格式是 24 小时的 时:分，例如 23:00 至 07:00 表示跨夜。"));
             _notify.Add(dnd);
 
             AddSections(page, _notify);
-        }
-    }
+        }    }
 }

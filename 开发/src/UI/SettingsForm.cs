@@ -37,13 +37,8 @@ namespace DeviceBattery
         private readonly Dictionary<Control, int> _labelRoles = new Dictionary<Control, int>();
         private readonly List<SettingsSection> _general = new List<SettingsSection>();
         private readonly List<SettingsSection> _display = new List<SettingsSection>();
-        private readonly List<SettingsSection> _refresh = new List<SettingsSection>();
         private readonly List<SettingsSection> _notify = new List<SettingsSection>();
         private readonly List<SettingsSection> _devices = new List<SettingsSection>();
-        private readonly List<SettingsSection> _supported = new List<SettingsSection>();
-        // 支持页的滚动框：条目多，装进固定高度的面板里滚动，不把整页撑长。
-        private ScrollHost _supportView;
-        private Panel _supportContent;
         private readonly List<SettingsSection> _about = new List<SettingsSection>();
 
         private DarkTabControl _tabs;
@@ -57,7 +52,6 @@ namespace DeviceBattery
         private CheckBox _history;
 
         private ComboBox _theme;
-        private Label _configPath;
 
         private ComboBox _displayMode;
         private ComboBox _iconDevice;
@@ -72,7 +66,6 @@ namespace DeviceBattery
         private ComboBox _interval;
         private CheckBox _pauseIdle;
         private Label _nextRead;
-        private Label _readRule;
 
         private CheckBox _lowWarn;
         private CheckBox _dnd;
@@ -88,7 +81,6 @@ namespace DeviceBattery
         private ComboBox _deviceThreshold;
         private CheckBox _forceVisible;
         private SurfaceButton _removeButton;
-        private Label _deviceNote;
 
         private Label _versionLabel;
         private Label _authorLabel;
@@ -142,10 +134,8 @@ namespace DeviceBattery
             BuildTabs();
             BuildGeneralPage();
             BuildDisplayPage();
-            BuildRefreshPage();
             BuildNotifyPage();
             BuildDevicePage();
-            BuildSupportedPage();
             BuildAboutPage();
 
             HandleCreated += delegate { ApplyWindowTheme(); };
@@ -292,12 +282,10 @@ namespace DeviceBattery
             _tabs.Dock = DockStyle.Fill;
             Controls.Add(_tabs);
             _tabs.BringToFront();
-            _tabs.TabPages.Add(NewPage("通用"));
+            _tabs.TabPages.Add(NewPage("常规"));
             _tabs.TabPages.Add(NewPage("显示"));
-            _tabs.TabPages.Add(NewPage("读取"));
             _tabs.TabPages.Add(NewPage("通知"));
             _tabs.TabPages.Add(NewPage("设备"));
-            _tabs.TabPages.Add(NewPage("支持"));
             _tabs.TabPages.Add(NewPage("关于"));
 
             for (int i = 0; i < _tabs.TabPages.Count; i++)
@@ -372,10 +360,6 @@ namespace DeviceBattery
             if (page != null)
             {
                 page.Invalidate(true);
-            }
-            if (_supportView != null)
-            {
-                _supportView.Invalidate(true);
             }
             _tabs.Invalidate();
             Update();
@@ -545,20 +529,18 @@ namespace DeviceBattery
         private static string PageCaption(TabPage page)
         {
             string text = page == null ? "" : page.Text;
-            if (text == "通用") return "启动方式、主题与电量历史";
-            if (text == "显示") return "托盘图标与面板上显示什么";
-            if (text == "读取") return "多久检查一次外设电量";
+            if (text == "常规") return "启动方式、查询节奏与主题";
+            if (text == "显示") return "托盘图标与设备面板显示什么";
             if (text == "通知") return "低电量提醒与免打扰时段";
             if (text == "设备") return "已识别的设备与单独设置";
-            if (text == "支持") return "哪些设备能读到电量";
-            if (text == "关于") return "版本信息与反馈入口";
+            if (text == "关于") return "版本信息、反馈与支持范围";
             return "";
         }
 
-        /// <summary>页头占用的高度（设计像素 46：标题 20 + 说明 16 + 上下留白）。</summary>
+        /// <summary>页头只留一行说明（设计像素 26）：页签名已经说清这一页叫什么，不再重复画大标题。</summary>
         internal int PageHeaderHeight(float f)
         {
-            return UiScale.Scale(46, f);
+            return UiScale.Scale(26, f);
         }
 
         /// <summary>在页面顶部画标题与说明；正文从 PageHeaderHeight 之后开始排。</summary>

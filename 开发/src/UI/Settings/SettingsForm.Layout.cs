@@ -26,7 +26,7 @@ namespace DeviceBattery
                 // 页签宽度每次重排都按当前字号与 DPI 实测一遍（DarkTabControl 自己在 DPI 变化时会先重置）。
                 ApplyTabItemSize(f);
                 int side = UiScale.Scale(12, f);
-                int gap = UiScale.Scale(12, f);
+                int gap = UiScale.Scale(10, f);
                 int labelColumn = MeasureLabelColumn(f);
                 int reserve = UiScale.Scale(16, f);
 
@@ -45,16 +45,10 @@ namespace DeviceBattery
                 }
 
                 int tallest = 0;
-                int currentHeight = 0;
-                int selected = _tabs.SelectedIndex < 0 ? 0 : _tabs.SelectedIndex;
                 for (int i = 0; i < _tabs.TabPages.Count; i++)
                 {
                     TabPage page = _tabs.TabPages[i];
                     int used = LayoutOnePage(page, i, width, f, side, gap, labelColumn, pageHeight);
-                    if (i == selected)
-                    {
-                        currentHeight = used;
-                    }
                     if (used > tallest)
                     {
                         tallest = used;
@@ -66,7 +60,8 @@ namespace DeviceBattery
                 // 正文放大后个别页面会比默认窗口高，按最高的页面把窗口撑一下，
                 // 免得下面那排「取消 / 应用 / 确定」被窗口下沿切掉。
                 // 窗口高度跟着当前页走：换页时按那一页的内容重新定高，页尾不留大块空白。
-                EnsureWindowHeight(currentHeight > 0 ? currentHeight : tallest, pageHeight, f, side);
+                EnsureWindowHeight(tallest, pageHeight, f, side);
+
                 UpdateNextRead();
             }
             finally
@@ -217,70 +212,6 @@ namespace DeviceBattery
             return Math.Min(limit, Math.Max(minimum, widest + UiScale.Scale(8, f)));
         }
 
-        /// <summary>
-        /// 支持页：三张卡片装进固定高度的滚动框，页面高度不随条目增长，
-        /// 和其他页签保持一致的窗口尺寸，长清单在框里滚动。
-        /// </summary>
-        private int LayoutSupportedPage(int width, float f, int side, int gap,
-            int labelColumn, int viewport)
-        {
-            int top = PageHeaderHeight(f) + UiScale.Scale(4, f);
-            int pad = UiScale.Scale(8, f);
-            int count = _supported.Count;
-            int[] heights = new int[count];
-            // 先按「有滚动条」的宽度算内容高：多留 9px 不会让卡片折行，
-            // 但确定要不要滚动条（内容超可视）需要先有高度。
-            int available = Math.Max(UiScale.Scale(200, f), width - pad * 2 - UiScale.Scale(9, f));
-            int contentHeight = pad * 2;
-            for (int s = 0; s < count; s++)
-            {
-                heights[s] = _supported[s].ApplyLayout(available, f, labelColumn);
-                contentHeight += heights[s] + (s > 0 ? gap : 0);
-            }
-            // 滚动框不再钉死 400 高：高度取「页面实际剩下的空间」——窗口拉高就变高，
-            // 窗口拉矮就变矮继续滚。窗口自身的高度仍按固定下限 minView 来算，
-            // 否则「框随窗口高 → 窗口随框高」会互相追着长。
-            int minView = UiScale.Scale(240, f);
-            int maxView = viewport - top - UiScale.Scale(12, f);
-            if (maxView < UiScale.Scale(140, f))
-            {
-                maxView = UiScale.Scale(140, f);
-            }
-            int viewHeight = maxView;
-            if (viewHeight > contentHeight)
-            {
-                viewHeight = contentHeight;
-            }
-            if (viewHeight < Math.Min(minView, maxView))
-            {
-                viewHeight = Math.Min(minView, maxView);
-            }
-            _supportView.SetBounds(side, top, width, viewHeight);
-            int inner = Math.Max(UiScale.Scale(200, f), _supportView.ViewWidth - pad * 2);
-            if (inner != available)
-            {
-                contentHeight = pad * 2;
-                for (int s = 0; s < count; s++)
-                {
-                    heights[s] = _supported[s].ApplyLayout(inner, f, labelColumn);
-                    contentHeight += heights[s] + (s > 0 ? gap : 0);
-                }
-            }
-            _supportContent.SetBounds(0, 0, _supportView.ViewWidth, contentHeight);
-            int y = pad;
-            for (int s = 0; s < count; s++)
-            {
-                _supported[s].Location = new Point(pad, y);
-                y += heights[s] + gap;
-            }
-            _supportView.SetContentHeight(contentHeight);
-            // 回报给窗口定高的是「首选的固定高度」而不是实际框高：否则两边互相追着长。
-            // 首选 420：没保存过窗口大小时，支持页开出来和别的页差不多高，框里约 420 高。
-            int preferred = Math.Max(minView, UiScale.Scale(420, f));
-            return top + Math.Min(contentHeight, preferred) + UiScale.Scale(12, f);
-        }
-
-        /// <summary>排一个页面，返回内容底部距离（用于判断要不要滚动条）。</summary>
         private int LayoutOnePage(TabPage page, int pageIndex, int width, float f,
             int side, int gap, int labelColumn, int viewport)
         {
@@ -288,10 +219,7 @@ namespace DeviceBattery
             {
                 width = UiScale.Scale(180, f);
             }
-            if (pageIndex == 5 && _supportView != null)
-            {
-                return LayoutSupportedPage(width, f, side, gap, labelColumn, viewport);
-            }
+
             // 正文从页头下面开始排（页头是 TabPage 自己画出来的标题 + 一句话说明）。
             int top = PageHeaderHeight(f) + UiScale.Scale(8, f);
             List<SettingsSection> sections = SectionsOf(pageIndex);
@@ -300,7 +228,7 @@ namespace DeviceBattery
             int contentHeight = top;
             // 设备页先把列表复原成基准高度再量，否则上一次排版喂大的高度会被当成内容高，
             // 一轮一轮往上追涨。
-            if (pageIndex == 4 && _deviceList != null && _deviceListBaseHeight > 0)
+            if (pageIndex == 3 && _deviceList != null && _deviceListBaseHeight > 0)
             {
                 if (_deviceList.Height != _deviceListBaseHeight)
                 {
@@ -323,7 +251,7 @@ namespace DeviceBattery
 
             // 设备页：列表只有一条表头（没记录）或条数很少时，页面下半截会空着。
             // 把剩余高度补给列表，卡片撑满页面；列表有上限，条目多了照旧滚动。
-            if (pageIndex == 4 && _deviceList != null && count > 0)
+            if (pageIndex == 3 && _deviceList != null && count > 0)
             {
                 int spare = viewport - contentHeight - UiScale.Scale(16, f);
                 if (spare > UiScale.Scale(16, f))
@@ -341,16 +269,15 @@ namespace DeviceBattery
             }
 
             // 内容比可视区矮的时候，以前多出来的空间全堆在页面最下面，看起来像“没排完”。
-            // 现在：多张卡片就把多余空间均分到卡片间距（每段最多 64px）；
-            // 只有一张卡片时整体往下沉一点，别让下半页空着。
+            // 现在：五个页签共用同一个窗口高度，短页多出来的空间先均分到卡片间距
+            // （每段最多 48px），剩下的再整体下沉一点，页尾不留一大片空白。
             int extra = 0;
             int shift = 0;
             int bottomPad = UiScale.Scale(12, f);
             int leftover = viewport - contentHeight - bottomPad;
             if (count > 1 && leftover > 0)
             {
-                // 每段最多撑 96px，剩下的再整体往下挪一点，页尾不留一大片空白。
-                extra = Math.Min(UiScale.Scale(24, f), leftover / count);
+                extra = Math.Min(UiScale.Scale(48, f), leftover / count);
                 int rest = leftover - extra * count;
                 if (rest > 0)
                 {
@@ -381,10 +308,8 @@ namespace DeviceBattery
             {
                 case 0: return _general;
                 case 1: return _display;
-                case 2: return _refresh;
-                case 3: return _notify;
-                case 4: return _devices;
-                case 5: return _supported;
+                case 2: return _notify;
+                case 3: return _devices;
                 default: return _about;
             }
         }

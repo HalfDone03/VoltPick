@@ -23,13 +23,12 @@ namespace DeviceBattery
                 _history.Checked = current.HistoryEnabled;
 
                 _theme.SelectedIndex = ThemeModeIndex(current.ThemeMode);
-                _configPath.Text = "配置文件：" + AppSettings.SettingsPath;
 
                 _displayMode.SelectedIndex = DisplayModeIndex(current.DisplayMode);
                 _iconDevice.SelectedIndex = IconDeviceIndex(current.IconDevice);
                 _digitSize.SelectedIndex = DigitIndex(current.DigitPercent);
                 _iconStyle.SelectedIndex = IconStyleIndex(current.IconStyle);
-            _iconFont.SelectedIndex = AppSettings.IconFontIndex(current.IconFont);
+                _iconFont.SelectedIndex = AppSettings.IconFontIndex(current.IconFont);
                 _autoColor.Checked = current.AutoColor;
                 _showVoltage.Checked = current.ShowVoltage;
                 UpdateColorButton();

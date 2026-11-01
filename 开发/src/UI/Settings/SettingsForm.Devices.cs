@@ -10,10 +10,9 @@ namespace DeviceBattery
 {
     internal sealed partial class SettingsForm : Form
     {
-
         private void BuildDevicePage()
         {
-            TabPage page = _tabs.TabPages[4];
+            TabPage page = _tabs.TabPages[3];
 
             SettingsSection list = new SettingsSection("已识别的设备");
             _deviceList = new ListView();
@@ -28,8 +27,8 @@ namespace DeviceBattery
             // 列表高度不是写死的：排版时先把高度复原成这个基准值再量内容，
             // 页面剩下的高度会补给列表（见 LayoutOnePage），窗口拉高时列表跟着变高，
             // 窗口按基准高度定高，所以不会出现「列表变高 → 窗口变高 → 列表再变高」的追涨。
-            // 基准高度按「至少能看到 8 条记录」给：原来 196 只够 6 条，记录一少整页下半截就空着。
-            _deviceListBaseHeight = UiScale.Px(this, 268);
+            // 基准高度按「至少能看到 7 条记录」给；条目更多时列表自己滚动。
+            _deviceListBaseHeight = UiScale.Px(this, 240);
             _deviceList.Height = _deviceListBaseHeight;
             _deviceList.Columns.Add("设备", UiScale.Px(this, 250));
             _deviceList.Columns.Add("类型", UiScale.Px(this, 80));
@@ -53,12 +52,8 @@ namespace DeviceBattery
             list.AddRow(_forceVisible);
             _devices.Add(list);
 
-            SettingsSection me = new SettingsSection("这台设备");
-            _deviceNote = NewNote("在列表里选中一台设备后可以改名、单独设阈值、读不到电量时也保留显示，或直接移除记录。");
-            me.AddRow(_deviceNote);
-            _devices.Add(me);
-
+            // 原来这里还有一张「这台设备」说明卡，内容就是下面这几行的用法，
+            // 看完还得滚一屏才知道能点什么，删掉整张卡。
             AddSections(page, _devices);
-        }
-    }
+        }    }
 }
