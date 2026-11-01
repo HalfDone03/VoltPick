@@ -446,8 +446,10 @@ namespace DeviceBattery
                 Bitmap layer = RenderDigits(text, digitFamily, digitWeight, pixelSize, color, dim, layerSize);
                 Rectangle box;
                 MeasureInk(layer, out box);
-                if (box.Width > maxWidth || box.Height > canvas)
+                if (box.Width <= 0 || box.Width > maxWidth || box.Height > canvas)
                 {
+                    // 空盒不能算「塞得下」：字号超过画布时 GDI+ 画成整张空白，
+                    // 空盒宽高都是 0，会被误判成最合适的一档，最后贴上去什么都没有。
                     layer.Dispose();
                     continue;
                 }
@@ -565,33 +567,210 @@ namespace DeviceBattery
             baseSize = level == 1 ? 12 : (level == 2 ? 14 : 16);
         }
 
+        /// <summary>托盘纯数字的超采样倍数：16px 槽位放大到 64px 画、再按面积平均缩回去。</summary>
+        private const int DigitSupersample = 4;
+
         /// <summary>
-        /// 在最终像素尺寸上按 1 位提示画数字：字形由 GDI 的网格适配直接落在整像素上，
-        /// 笔画是纯色、没有半透明灰边，托盘里看着干净利落（这就是之前那版的效果）。
+        /// 画托盘数字：先按 <see cref="DigitSupersample"/> 倍画布用灰度抗锯齿绘制，
+        /// 再按面积平均缩回目标尺寸。原来用 SingleBitPerPixelGridFit 直接画在最终尺寸上，
+        /// 笔画只落在整像素、没有灰边，字圆和斜线全是硬台阶——放大看就是「毛刺」。
         /// </summary>
         private static Bitmap RenderDigits(string text, string family, FontStyle weight, int pixelSize,
             Color color, bool dim, int layerSize)
         {
-            Bitmap layer = new Bitmap(layerSize, layerSize, PixelFormat.Format32bppArgb);
-            using (Graphics paint = Graphics.FromImage(layer))
+            // GDI+ 在字号超过 220 左右时干脆一个像素都不画（实测 220 正常、240 全空），
+            // 所以超采样倍数要按最终字号收一收：小图标照旧 4 倍，大图标降到 3/2 倍。
+            int factor = DigitSupersample;
+            while (factor > 1 && pixelSize * factor > 200)
             {
-                paint.SmoothingMode = SmoothingMode.None;
-                paint.PixelOffsetMode = PixelOffsetMode.Half;
-                paint.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
-                paint.Clear(Color.Transparent);
-                using (Font font = new Font(family, pixelSize, weight, GraphicsUnit.Pixel))
-                using (StringFormat format = new StringFormat(StringFormat.GenericTypographic))
-                using (SolidBrush brush = new SolidBrush(dim ? Mix(color, Color.Black, 0.45f) : color))
+                factor--;
+            }
+
+            int big = layerSize * factor;
+
+            // 字形行高必须落在画布内：一旦超出去，GDI+ 不是裁一刀，而是整张画布一个像素都不画
+            // （实测 288px 画布画 240px 字全空、220px 正常）。各字体的行高与字号比例差得很远
+            // （Arial Black 就比 Impact 高一大截），所以这里实测一个比例再折算，不能写死系数。
+            int fontSize = pixelSize * factor;
+            using (Font probe = new Font(family, pixelSize, weight, GraphicsUnit.Pixel))
+            {
+                float ratio = probe.Height / (float)pixelSize;
+                int limit = (int)Math.Floor(big / ratio);
+                if (fontSize > limit)
                 {
-                    format.Alignment = StringAlignment.Center;
-                    format.LineAlignment = StringAlignment.Center;
-                    format.FormatFlags |= StringFormatFlags.NoClip;
-                    RectangleF box = new RectangleF(0f, 0f, layerSize, layerSize);
-                    paint.DrawString(text, font, brush, box, format);
+                    fontSize = limit;
                 }
             }
 
-            return layer;
+            if (fontSize < 6)
+            {
+                fontSize = 6;
+            }
+            using (Bitmap canvas = new Bitmap(big, big, PixelFormat.Format32bppArgb))
+            {
+                using (Graphics paint = Graphics.FromImage(canvas))
+                {
+                    paint.SmoothingMode = SmoothingMode.AntiAlias;
+                    paint.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    // 灰度抗锯齿：托盘图标尺寸固定，ClearType 的彩色子像素边在深色托盘上会发彩
+                    paint.TextRenderingHint = TextRenderingHint.AntiAlias;
+                    paint.Clear(Color.Transparent);
+                    using (Font font = new Font(family, fontSize, weight, GraphicsUnit.Pixel))
+                    using (StringFormat format = new StringFormat(StringFormat.GenericTypographic))
+                    using (SolidBrush brush = new SolidBrush(dim ? Mix(color, Color.Black, 0.45f) : color))
+                    {
+                        format.Alignment = StringAlignment.Center;
+                        format.LineAlignment = StringAlignment.Center;
+                        format.FormatFlags |= StringFormatFlags.NoClip;
+                        RectangleF box = new RectangleF(0f, 0f, big, big);
+                        paint.DrawString(text, font, brush, box, format);
+                    }
+                }
+
+                return DownscaleAlpha(canvas, layerSize, factor);
+            }
+        }
+
+        /// <summary>
+        /// 整数倍面积平均缩小：按 alpha 预乘后累加，边缘不会因为权重不同而发黑或发白；
+        /// 缩小倍数是整数，所以每个目标像素正好吃掉 factor² 个源像素。
+        /// 缩完再按「覆盖率 95 分位」反解一次 gamma：细字体缩到 16px 时笔芯只有一百出头的 alpha，
+        /// 看着发虚；这一步把笔芯提到接近不透明，同时保留边缘的渐变（不是硬阈值截断）。
+        /// </summary>
+        private static Bitmap DownscaleAlpha(Bitmap source, int size, int factor)
+        {
+            Bitmap target = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+            BitmapData srcData = source.LockBits(new Rectangle(0, 0, source.Width, source.Height),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            BitmapData dstData = target.LockBits(new Rectangle(0, 0, size, size),
+                ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                int srcStride = srcData.Stride;
+                byte[] srcBytes = new byte[srcStride * source.Height];
+                Marshal.Copy(srcData.Scan0, srcBytes, 0, srcBytes.Length);
+
+                int dstStride = dstData.Stride;
+                byte[] dstBytes = new byte[dstStride * size];
+                int area = factor * factor;
+                int[] coverage = new int[size * size];
+                int[] colorR = new int[size * size];
+                int[] colorG = new int[size * size];
+                int[] colorB = new int[size * size];
+                int[] histogram = new int[256];
+                int ink = 0;
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        int sumA = 0;
+                        int sumB = 0;
+                        int sumG = 0;
+                        int sumR = 0;
+                        for (int sy = 0; sy < factor; sy++)
+                        {
+                            int row = (y * factor + sy) * srcStride + x * factor * 4;
+                            for (int sx = 0; sx < factor; sx++)
+                            {
+                                int index = row + sx * 4;
+                                int alpha = srcBytes[index + 3];
+                                sumA += alpha;
+                                sumB += srcBytes[index] * alpha;
+                                sumG += srcBytes[index + 1] * alpha;
+                                sumR += srcBytes[index + 2] * alpha;
+                            }
+                        }
+
+                        if (sumA == 0)
+                        {
+                            continue;
+                        }
+
+                        int slot = y * size + x;
+                        int value = sumA / area;
+                        coverage[slot] = value;
+                        colorR[slot] = sumR / sumA;
+                        colorG[slot] = sumG / sumA;
+                        colorB[slot] = sumB / sumA;
+                        histogram[value]++;
+                        ink++;
+                    }
+                }
+
+                double gamma = CoverageGamma(histogram, ink);
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        int slot = y * size + x;
+                        int offset = y * dstStride + x * 4;
+                        int value = coverage[slot];
+                        if (value == 0)
+                        {
+                            dstBytes[offset] = 0;
+                            dstBytes[offset + 1] = 0;
+                            dstBytes[offset + 2] = 0;
+                            dstBytes[offset + 3] = 0;
+                            continue;
+                        }
+
+                        dstBytes[offset] = (byte)colorB[slot];
+                        dstBytes[offset + 1] = (byte)colorG[slot];
+                        dstBytes[offset + 2] = (byte)colorR[slot];
+                        dstBytes[offset + 3] = (byte)Math.Round(255.0 * Math.Pow(value / 255.0, gamma));
+                    }
+                }
+
+                Marshal.Copy(dstBytes, 0, dstData.Scan0, dstBytes.Length);
+            }
+            finally
+            {
+                source.UnlockBits(srcData);
+                target.UnlockBits(dstData);
+            }
+
+            return target;
+        }
+
+        /// <summary>
+        /// 由覆盖率直方图反解 gamma，让 95 分位的覆盖率正好落到接近不透明的 0.96：
+        /// 粗体笔画本来就有大片全满像素（p95≈255），gamma 自动接近 1、等于不改；
+        /// 细体只有一百出头的覆盖率，gamma 会降到 0.5 附近，笔芯被提实而边缘仍是渐变。
+        /// </summary>
+        private static double CoverageGamma(int[] histogram, int ink)
+        {
+            if (ink == 0)
+            {
+                return 1.0;
+            }
+
+            int target = (int)Math.Ceiling(ink * 0.95);
+            int seen = 0;
+            int level = 255;
+            for (int value = 255; value >= 1; value--)
+            {
+                seen += histogram[value];
+                if (seen >= target)
+                {
+                    level = value;
+                    break;
+                }
+            }
+
+            if (level >= 245)
+            {
+                return 1.0;
+            }
+
+            double gamma = Math.Log(0.96) / Math.Log(level / 255.0);
+            // 下限决定「最细的字体在 16px 上有多实」：0.34 时 soft 档的笔芯能压到接近全不透明，
+            // 只留边缘一两个灰阶；再往上抬（0.5）16px 会整体发虚，看着像蒙了一层雾。
+            if (gamma < 0.34)
+            {
+                return 0.34;
+            }
+
+            return gamma > 1.0 ? 1.0 : gamma;
         }
         /// <summary>量墨迹包围盒，并返回「硬像素占比」（alpha≥250 占全部非透明像素的比例）。</summary>
         private static float MeasureInk(Bitmap layer, out Rectangle box)

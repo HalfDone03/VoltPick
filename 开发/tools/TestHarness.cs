@@ -12,7 +12,7 @@ internal static class TestHarness
 {
     // AGENTS.md 要求自测 301 通过 / 0 失败。只判 _failed 的话，删掉一条测试也会"通过"，
     // 所以把期望条数也钉死：新增/删除断言后必须同步改这里。
-    private const int ExpectedChecks = 301;
+    private const int ExpectedChecks = 302;
 
     private static int _passed;
     private static int _failed;
@@ -255,6 +255,23 @@ internal static class TestHarness
         }
         Check("黑色图标使用亮色文字", blackIconMax > 180, blackIconMax.ToString());
 
+        // 托盘图标在 16~32px 上是一像素一笔的尺寸，必须走抗锯齿：1 位提示会把圆弧画成台阶，
+        // 缩小后看着就是「毛刺」。这里数一下半透明灰边像素，为 0 说明又退回单比特渲染了。
+        int digitSoftEdges = 0;
+        using (Icon icon = IconFactory.BuildDigits(32, "80", Color.White, false, 80, false, "soft"))
+        using (Bitmap bitmap = icon.ToBitmap())
+        {
+            for (int y = 0; y < bitmap.Height; y++)
+            {
+                for (int x = 0; x < bitmap.Width; x++)
+                {
+                    int alpha = bitmap.GetPixel(x, y).A;
+                    if (alpha > 0 && alpha < 250) digitSoftEdges++;
+                }
+            }
+        }
+        Check("托盘数字带抗锯齿灰边", digitSoftEdges >= 20, digitSoftEdges + " 个灰边像素");
+
         // 图标文字测量必须在确定主题下进行：前面的 Theme.Apply(savedThemeMode)
         // 让主题取决于本机系统设置，浅色下深色文字与浅色背景的暗像素判定会失真。
         Theme.Apply("dark");
@@ -289,7 +306,8 @@ internal static class TestHarness
             "w=" + textWidth + " h=" + textHeight + " center=" + textCenterX + "," + textCenterY);
 
         // 「不显示数字」必须一个像素都不画；三档大小必须逐级变大。16px 托盘下三档只差 1~2 像素，
-        // 所以这里在 64px 上量像素数，量的是「有字 / 空字」两张图的差异，不受抗锯齿影响。
+        // 换成抗锯齿之后墨迹盒高度在 16px 上会被量化成同一个整数（灰边让每一档都多出半像素），
+        // 高度只能要求不递减，真正的「变大」改用墨迹像素数来判断；64px 上仍按像素数逐级递增。
         int digitErrors = 0;
         int[] levelInk = new int[] { -1, -1, -1, -1 };
         int[] levelDigits = new int[] { 0, 66, 80, 100 };
@@ -366,8 +384,9 @@ internal static class TestHarness
             levelInk[1] < levelInk[2] && levelInk[2] < levelInk[3] &&
             plainInk[0] > 0 &&
             plainInk[1] < plainInk[2] && plainInk[2] <= plainInk[3] &&
-            plainSmallHeight[1] < plainSmallHeight[2] && plainSmallHeight[2] < plainSmallHeight[3] &&
+            plainSmallHeight[1] <= plainSmallHeight[2] && plainSmallHeight[2] <= plainSmallHeight[3] &&
             plainSmall[1] > 0 && plainSmall[2] > 0 && plainSmall[3] > 0 &&
+            plainSmall[1] < plainSmall[2] && plainSmall[2] < plainSmall[3] &&
             plainWidth[3] >= 56,
             "ink=" + levelInk[0] + "/" + levelInk[1] + "/" + levelInk[2] + "/" + levelInk[3] +
             " plain=" + plainInk[0] + "/" + plainInk[1] + "/" + plainInk[2] + "/" + plainInk[3] +
