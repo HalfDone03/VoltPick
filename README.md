@@ -67,7 +67,7 @@ Version **v1.0**.
    ├─ tools/             测试工具源码
    ├─ tests/             真机布局核对脚本（db-live_LiveLayout.cs）
    ├─ lib/winmd/         编译所需的 WinRT 引用
-   ├─ assets/            图标与截图（app.ico 编译要用）
+   ├─ assets/            图标 app.ico、源图 icon-source.jpg、截图
    ├─ build.ps1          重新编译 exe（输出到上一层目录）
    └─ test.ps1           重建 exe 并跑全部自测（298 条断言 + 4 个冒烟程序）
 ```
@@ -88,6 +88,8 @@ powershell -ExecutionPolicy Bypass -File .\test.ps1
 不需要安装 SDK，使用 Windows 自带的 .NET Framework 4.8 `csc.exe`。WinRT 引用在 `lib/winmd/`。
 
 `test.ps1` 会先重建 exe，再依次跑 298 条断言和 4 个冒烟程序（托盘、历史、面板滚动）。断言条数由 `TestHarness` 里的 `ExpectedChecks` 核对，少跑一条也算失败；任何一步失败都会以非 0 退出。临时 exe 都写在 `tests/` 下，结束时统一删除。
+
+pp.ico` 由 `assets/icon-source.jpg` 按 16/20/24/32/48/64/128/256 逐尺寸重采样生成；换图标时改源图，再手动跑一次 `tools/MakeIcon.cs`（不参与 build/test，命令行写在文件头注释里）。
 
 **更新迭代约定**：正在运行的 `VoltPick.exe` 会锁住输出文件导致 `error CS0016`。重新构建前直接结束该进程即可（用户已明确授权，不需要先询问）：
 

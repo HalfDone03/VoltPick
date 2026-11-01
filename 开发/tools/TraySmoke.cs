@@ -49,6 +49,19 @@ internal static class TraySmoke
             panel.CloseEmbeddedView();
             Pump(200);
         }
+        // _refreshRect / _historyRect 是 OnPaint 里算出来的。无人值守时窗口刚 Show 完还没画过，
+        // 两个矩形都是空，下面按坐标点击全部落空（表现为 refresh=0 → 退出码 3，且随机复现）。
+        // 这里先强推绘制，等事件矩形落地再断言；等不到就明确报「没画出来」。
+        for (int attempt = 0; attempt < 40 && ((Rectangle)Field(panel, "_refreshRect")).IsEmpty; attempt++)
+        {
+            panel.Refresh();
+            Pump(50);
+        }
+        if (((Rectangle)Field(panel, "_refreshRect")).IsEmpty)
+        {
+            Console.WriteLine("panel did not paint: refresh rect is empty");
+            return 2;
+        }
         // 冒烟测试运行在无人值守环境，系统鼠标可能恰好停在面板外；
         // 把指针放到面板内，避免“外部点击”定时器在断言前把面板关掉。
         // 若面板落在副屏（如 X=2172），鼠标无法移进去，先把它拉回主屏。
