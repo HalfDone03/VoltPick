@@ -83,14 +83,16 @@ namespace DeviceBattery
         {
             int chrome = _tabs.DisplayRectangle.Y;
             int bottom = _bottom == null ? UiScale.Scale(52, f) : _bottom.Height;
-            int extra = SystemInformation.HorizontalScrollBarHeight;
+            // 页面不再用 AutoScroll（见 LayoutPages 里的说明），原生横向滚动条永远不会出现，
+            // 原来预留的 SystemInformation.HorizontalScrollBarHeight（96dpi 下 17px）是白占的，
+            // 每页底部都会多空这么高，这里不再预留。
             int limit = Screen.FromControl(this).WorkingArea.Height - UiScale.Scale(120, f);
             // 无论是否自动定高，都允许用户把窗口拖小到内容需要滚动为止，而不锁死成内容尺寸。
             MinimumSize = new Size(UiScale.Scale(520, f), UiScale.Scale(330, f));
             if (_userSized)
             {
                 // 用户拖过窗口：只在内容放不下时往上长，绝不自动缩回去。
-                int growTo = chrome + contentHeight + side * 2 + bottom + extra;
+                int growTo = chrome + contentHeight + side * 2 + bottom;
                 if (growTo > limit)
                 {
                     growTo = limit;
@@ -115,12 +117,12 @@ namespace DeviceBattery
             }
 
             // 按最高的一页定窗口高度：比默认高就撑开、比默认矮就收一下，页尾不留大块空白。
-            int wanted = chrome + contentHeight + side * 2 + bottom + extra;
+            int wanted = chrome + contentHeight + side * 2 + bottom;
             if (wanted > limit)
             {
                 wanted = limit;
             }
-            int floor = chrome + Math.Min(contentHeight, pageHeight) + side * 2 + bottom + extra;
+            int floor = chrome + Math.Min(contentHeight, pageHeight) + side * 2 + bottom;
             if (wanted < floor)
             {
                 wanted = floor;
