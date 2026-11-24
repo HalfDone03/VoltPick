@@ -80,6 +80,20 @@ internal static class PerfCheck
             }
             panel.Hide();
         }
+
+        // 3. HID 枚举开销：ListPaths（纯 SetupAPI，不打开设备） vs FindAll（每台都探测）。
+        for (int i = 0; i < 3; i++) { HidEnumerator.ListPaths(); HidEnumerator.FindAll(); }
+        watch = Stopwatch.StartNew();
+        for (int i = 0; i < 20; i++) { HidEnumerator.ListPaths(); }
+        watch.Stop();
+        double pathsMs = watch.Elapsed.TotalMilliseconds / 20;
+        watch = Stopwatch.StartNew();
+        for (int i = 0; i < 20; i++) { HidEnumerator.FindAll(); }
+        watch.Stop();
+        double fullMs = watch.Elapsed.TotalMilliseconds / 20;
+        Console.WriteLine("hid ListPaths: " + pathsMs.ToString("F2") + " ms/次");
+        Console.WriteLine("hid FindAll:   " + fullMs.ToString("F2") + " ms/次");
+        Console.WriteLine("enumeration speedup: " + (fullMs / Math.Max(0.01, pathsMs)).ToString("F1") + "x");
     }
 
     private static BatterySnapshot BuildSnapshot()

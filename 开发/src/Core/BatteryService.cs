@@ -20,6 +20,8 @@ namespace DeviceBattery
         private readonly LogitechHidppSource _hidpp = new LogitechHidppSource();
         // 各品牌的私有 HID 协议（雷蛇、赛睿、WLmouse/Lamzu/G-Wolves、MCHOSE、Pulsar/VXE）。
         private readonly VendorHidBatterySource _vendor = new VendorHidBatterySource();
+        private readonly GamepadBatterySource _gamepad = new GamepadBatterySource();
+        private readonly AppleBleBatterySource _appleBle = new AppleBleBatterySource();
         private readonly BluetoothWatcher _watcher = new BluetoothWatcher();
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
 
@@ -41,6 +43,9 @@ namespace DeviceBattery
         private List<HidBatteryDevice> _genericHidInfos = new List<HidBatteryDevice>();
         private List<HidppDevice> _hidppInfos = new List<HidppDevice>();
         private List<VendorDevice> _vendorDevices = new List<VendorDevice>();
+        private List<string> _lastHidPaths = new List<string>();
+        private List<HidDeviceInfo> _cachedKeyboards = new List<HidDeviceInfo>();
+        private bool _hidCacheValid;
         private bool _disposed;
         private bool _hasDiscovered;
 
@@ -84,6 +89,10 @@ namespace DeviceBattery
                 Log.Warn("蓝牙设备监听启动失败：" + ex.Message);
             }
 
+            // 苹果耳机电量走 BLE 广播，被动监听即可（不发任何报文）。
+            // 只有系统有蓝牙适配器时能启动，失败也不影响其它设备。
+            _appleBle.Start();
+
             // 不要等首个 5 秒轮询周期：启动后立刻发现设备并读取一次。
             // 登录自启例外：醒来信号会让工作线程的「安静期」提前结束，那样 18 秒延迟白等，
             // 等于跟系统登录时的磁盘/服务 IO 抢时间。安静期结束后线程本来就会自己开工。
@@ -112,6 +121,7 @@ namespace DeviceBattery
             catch (Exception)
             {
             }
+            try { _appleBle.Dispose(); } catch (Exception) { }
             try { _watcher.Dispose(); } catch (Exception) { }
             if (!workerExited)
             {
@@ -354,64 +364,69 @@ namespace DeviceBattery
 
             try
             {
-                // 一轮发现只枚举一次 HID 接口：ATK 接收器、通用 HID、键盘三处共用，
-                // 避免对同一批接口重复 CreateFile + HidD_GetPreparsedData。
-                List<HidDeviceInfo> hidScan = HidEnumerator.FindAll();
-                try
+                // 先看 HID 接口集合有没有变化：没变化就复用上一轮探测结果，
+                // 省掉对每台接口重复 CreateFile + HidD_GetPreparsedData 的开销。
+                // 只有路径集合真的变了才重做一次完整探测。
+                List<string> paths = HidEnumerator.ListPaths();
+                bool unchanged = _hidCacheValid && HidEnumerator.SamePaths(paths, _lastHidPaths);
+                if (unchanged)
                 {
-                    atk = _atk.Find(hidScan);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("ATK 接收器检测失败：" + ex.Message);
-                }
-                if (atk != null)
-                {
-                    // 接收器产品名只是“Wireless mouse 8k NANO dongle-L”，
-                    // 这里再问一次鼠标本体，拿到真实型号和稳定身份。
-                    atkIdentity = _atk.Identify(atk);
-                    if (atkIdentity == null)
+                    lock (_gate)
                     {
-                        // 鼠标休眠时查询可能失败，但之前的真实型号记录仍在；
-                        // 不能退回接收器哈希 ID，否则会生成重复设备。
-                        atkIdentity = AppSettings.FindKnownAtkIdentity(atk.SerialNumber);
+                        atk = _atkInfo;
+                        genericHid = _genericHidInfos;
+                        hidpp = _hidppInfos;
+                        vendors = _vendorDevices;
+                    }
+                    keyboards = _cachedKeyboards;
+                    if (atk != null)
+                    {
+                        atkIdentity = _atk.Identify(atk);
+                        if (atkIdentity == null)
+                        {
+                            atkIdentity = AppSettings.FindKnownAtkIdentity(atk.SerialNumber);
+                        }
                     }
                 }
+                else
+                {
+                    // 一轮发现只枚举一次 HID 接口：ATK 接收器、通用 HID、键盘三处共用。
+                    List<HidDeviceInfo> hidScan = HidEnumerator.FindAll();
+                    _lastHidPaths = paths;
+                    _hidCacheValid = true;
+                    try
+                    {
+                        atk = _atk.Find(hidScan);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warn("ATK 接收器检测失败：" + ex.Message);
+                    }
+                    if (atk != null)
+                    {
+                        // 接收器产品名只是“Wireless mouse 8k NANO dongle-L”，
+                        // 这里再问一次鼠标本体，拿到真实型号和稳定身份。
+                        atkIdentity = _atk.Identify(atk);
+                        if (atkIdentity == null)
+                        {
+                            // 鼠标休眠时查询可能失败，但之前的真实型号记录仍在；
+                            // 不能退回接收器哈希 ID，否则会生成重复设备。
+                            atkIdentity = AppSettings.FindKnownAtkIdentity(atk.SerialNumber);
+                        }
+                    }
 
-                try
-                {
-                    genericHid = _genericHid.Find(hidScan);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("通用 HID 鼠标/键盘检测失败：" + ex.Message);
-                }
+                    try { genericHid = _genericHid.Find(hidScan); }
+                    catch (Exception ex) { Log.Warn("通用 HID 鼠标/键盘检测失败：" + ex.Message); }
 
-                try
-                {
-                    hidpp = _hidpp.Find(hidScan);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("罗技 HID++ 检测失败：" + ex.Message);
-                }
+                    try { hidpp = _hidpp.Find(hidScan); }
+                    catch (Exception ex) { Log.Warn("罗技 HID++ 检测失败：" + ex.Message); }
 
-                try
-                {
-                    vendors = _vendor.Find(hidScan);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("厂商私有协议检测失败：" + ex.Message);
-                }
+                    try { vendors = _vendor.Find(hidScan); }
+                    catch (Exception ex) { Log.Warn("厂商私有协议检测失败：" + ex.Message); }
 
-                try
-                {
-                    keyboards = HidEnumerator.FindKeyboards(hidScan);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("键盘检测失败：" + ex.Message);
+                    try { keyboards = HidEnumerator.FindKeyboards(hidScan); }
+                    catch (Exception ex) { Log.Warn("键盘检测失败：" + ex.Message); }
+                    _cachedKeyboards = keyboards ?? new List<HidDeviceInfo>();
                 }
             }
             catch (Exception ex)
@@ -598,6 +613,7 @@ namespace DeviceBattery
                         (item.Category == DeviceCategory.Keyboard ? 1 : 2);
                     device.SourceDescription = item.Protocol.Label;
                     device.Status = DeviceStatus.Online;
+                    device.MinIntervalSeconds = item.Protocol.MinQuerySeconds;
                     candidates.Add(Reuse(oldMap, device));
                 }
             }
@@ -661,6 +677,38 @@ namespace DeviceBattery
                     state.UnsupportedReason = keyboard.UnsupportedReason;
                     candidates.Add(state);
                 }
+            }
+
+            // 手柄：Xbox 走 WGI 的毫瓦时读数（精确），回落到 XInput 粗档位。
+            // 只在有手柄时才碰 Windows.Gaming.Input，避免给托盘进程白加载输入栈。
+            try
+            {
+                List<BatteryReading> pads = _gamepad.PollXbox();
+                for (int i = 0; i < pads.Count; i++)
+                {
+                    BatteryReading reading = pads[i];
+                    DeviceState pad = new DeviceState();
+                    pad.Id = "gamepad:xbox:" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    pad.Category = DeviceCategory.Gamepad;
+                    pad.Model = "Xbox 手柄";
+                    pad.DisplayName = pad.Model;
+                    pad.Transport = TransportKind.Usb;
+                    pad.Connected = true;
+                    pad.BatterySupported = true;
+                    pad.Order = 3;
+                    pad.SourceDescription = reading.Raw != null && reading.Raw.StartsWith("XInput", StringComparison.Ordinal)
+                        ? "XInput 粗档位" : "Windows.Gaming.Input";
+                    pad.Status = DeviceStatus.Online;
+                    DeviceState state = Reuse(oldMap, pad);
+                    state.LastReading = reading;
+                    state.Status = DeviceStatus.Online;
+                    state.BatterySupported = true;
+                    candidates.Add(state);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("手柄检测失败：" + ex.Message);
             }
 
             bool hasBluetoothHeadset = false;
@@ -1338,6 +1386,17 @@ namespace DeviceBattery
                     reading = _bluetooth.Read(device, bleTimeout);
                     NoteBleResult(device, reading, bleTimeout);
                 }
+                else if (device.Id != null && device.Id.StartsWith("gamepad:xbox:", StringComparison.Ordinal))
+                {
+                    List<BatteryReading> pads = _gamepad.PollXbox();
+                    int index;
+                    reading = int.TryParse(device.Id.Substring("gamepad:xbox:".Length),
+                        System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture, out index) &&
+                        index >= 0 && index < pads.Count
+                        ? pads[index]
+                        : BatteryReading.Unknown("手柄已断开", BatterySourceKind.Vendor);
+                }
                 else if (device.Id != null && device.Id.StartsWith("vendor:", StringComparison.Ordinal))
                 {
                     VendorDevice target = null;
@@ -1577,13 +1636,22 @@ namespace DeviceBattery
 
         internal static int ComputeInterval(DeviceState device, int baseMinutes)
         {
+            // 某些接收器问得太勤会出问题（BlackShark V3 会被问到重启、键盘接收器
+            // 需要时间休眠），Discover 时把协议下限带在这里。0 表示完全跟随全局设置。
+            int min = device == null ? 0 : device.MinIntervalSeconds;
+            if (min < 0)
+            {
+                min = 0;
+            }
             if (device == null || !device.HasValue)
             {
-                return ComputeFailureInterval(device == null ? 0 : device.FailCount, baseMinutes);
+                int failure = ComputeFailureInterval(device == null ? 0 : device.FailCount, baseMinutes);
+                return min > 0 ? Math.Max(failure, min) : failure;
             }
 
             // 正常读数严格按用户设置的间隔，不再因低电量/充电/数值不变而额外查询。
-            return ClampBaseSeconds(baseMinutes);
+            int normal = ClampBaseSeconds(baseMinutes);
+            return min > 0 ? Math.Max(normal, min) : normal;
         }
 
         /// <summary>连续失败多少次之前，卡片仍按上一次的成功读数显示（避免一闪一闪）。</summary>

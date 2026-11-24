@@ -13,8 +13,7 @@ namespace DeviceBattery
 
         private void BuildDevicePage()
         {
-            TabPage page = _tabs.TabPages[4];
-
+            // 分组挂到本页的内容面板（由 LayoutPages 负责滚动容器尺寸）。
             SettingsSection list = new SettingsSection("已识别的设备");
             _deviceList = new ListView();
             _deviceList.View = View.Details;
@@ -58,7 +57,7 @@ namespace DeviceBattery
             me.AddRow(_deviceNote);
             _devices.Add(me);
 
-            AddSections(page, _devices);
+            AddSections(_pageContent[3], _devices);
         }
     }
 }

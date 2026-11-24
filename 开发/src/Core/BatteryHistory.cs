@@ -356,7 +356,7 @@ namespace DeviceBattery
             return epoch.AddSeconds(seconds).ToLocalTime();
         }
 
-        private static long ToUnixSeconds(DateTime value)
+        internal static long ToUnixSeconds(DateTime value)
         {
             DateTime utc = value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
             DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);

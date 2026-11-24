@@ -41,10 +41,11 @@ namespace DeviceBattery
         private readonly List<SettingsSection> _notify = new List<SettingsSection>();
         private readonly List<SettingsSection> _devices = new List<SettingsSection>();
         private readonly List<SettingsSection> _supported = new List<SettingsSection>();
-        // 支持页的滚动框：条目多，装进固定高度的面板里滚动，不把整页撑长。
-        private ScrollHost _supportView;
-        private Panel _supportContent;
         private readonly List<SettingsSection> _about = new List<SettingsSection>();
+        // 每个页签一个自绘滚动容器：内容超高时可在页内滚动，底部按钮始终可见，
+        // 不再依赖把窗口无限撑高（屏幕放不下时会裁掉底部设置）。
+        private ScrollHost[] _pageScroll;
+        private Panel[] _pageContent;
 
         private DarkTabControl _tabs;
         private Panel _bottom;
@@ -68,6 +69,10 @@ namespace DeviceBattery
         private SurfaceButton _colorButton;
         private IconStylePreview _iconPreview;
         private CheckBox _showVoltage;
+        private CheckBox _trayCategoryIcon;
+        private CheckBox _taskbarWidget;
+        private NumericUpDown _taskbarOffset;
+        private CheckBox _allowVoltageEstimate;
 
         private ComboBox _interval;
         private CheckBox _pauseIdle;
@@ -106,6 +111,7 @@ namespace DeviceBattery
         private int _sizedHeight;
         // 用户是否手动拖过窗口；拖过之后不再按页签自动定高。
         private bool _userSized;
+        private DateTime _lastUserResize = DateTime.MinValue;
         private bool _fitting;
         private string _selectedDeviceId = "";
 
@@ -124,13 +130,11 @@ namespace DeviceBattery
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(DesignWidth, DesignHeight);
-            // 上次拖动过的大小存在设置里，下次打开沿用（0 表示还没拖过，仍按内容自适应）。
-            if (AppSettings.Current.SettingsWidth > 0 && AppSettings.Current.SettingsHeight > 0)
-            {
-                ClientSize = new Size(AppSettings.Current.SettingsWidth, AppSettings.Current.SettingsHeight);
-                _userSized = true;
-            }
+            // 宽度沿用上次拖过的，高度回到设计值：上次的高度（比如 775）会让短页底部空一大块。
+            // 高度交给 EnsureWindowHeight 按当前页内容定，切页时再跟着调整。
+            int initialWidth = AppSettings.Current.SettingsWidth > 0
+                ? AppSettings.Current.SettingsWidth : DesignWidth;
+            ClientSize = new Size(initialWidth, DesignHeight);
             ShowInTaskbar = false;
             AutoScaleMode = AutoScaleMode.None;
             EnableDoubleBuffer(this);
@@ -140,13 +144,16 @@ namespace DeviceBattery
 
             BuildBottomBar();
             BuildTabs();
+            // 先建各页自己的分组，再把「读取/支持」的分组追加进去，最后统一挂载控件。
             BuildGeneralPage();
-            BuildDisplayPage();
             BuildRefreshPage();
+            BuildDisplayPage();
             BuildNotifyPage();
             BuildDevicePage();
-            BuildSupportedPage();
             BuildAboutPage();
+            BuildSupportedPage();
+            // 合并页的控件在分组全部就位后再挂，保证顺序：通用 → 读取；关于 → 支持。
+            MountMergedPages();
 
             HandleCreated += delegate { ApplyWindowTheme(); };
             // 主题一换就整体重刷：点「应用」后设置窗口自己跟着变色，
@@ -157,7 +164,7 @@ namespace DeviceBattery
             LoadValues();
             Load += delegate { LayoutPages(); PositionButtons(); };
             Shown += delegate { LayoutPages(); PositionButtons(); };
-            // 用户自己拖大/拖小之后就不再按页签内容自动改高度，只重排内容。
+            // 用户自己拖大/拖小：记下时间，800ms 内不自动改高，之后切页仍按内容定高。
             Resize += delegate
             {
                 if (_fitting)
@@ -165,6 +172,7 @@ namespace DeviceBattery
                     return;
                 }
                 _userSized = true;
+                _lastUserResize = DateTime.Now;
                 LayoutPages();
             };
         }
@@ -292,15 +300,17 @@ namespace DeviceBattery
             _tabs.Dock = DockStyle.Fill;
             Controls.Add(_tabs);
             _tabs.BringToFront();
-            _tabs.TabPages.Add(NewPage("通用"));
+            // 5 个页签：读取并入常规、支持并入关于。设置项一个不少，只是入口更集中。
+            _tabs.TabPages.Add(NewPage("常规"));
             _tabs.TabPages.Add(NewPage("显示"));
-            _tabs.TabPages.Add(NewPage("读取"));
             _tabs.TabPages.Add(NewPage("通知"));
             _tabs.TabPages.Add(NewPage("设备"));
-            _tabs.TabPages.Add(NewPage("支持"));
             _tabs.TabPages.Add(NewPage("关于"));
 
-            for (int i = 0; i < _tabs.TabPages.Count; i++)
+            int count = _tabs.TabPages.Count;
+            _pageScroll = new ScrollHost[count];
+            _pageContent = new Panel[count];
+            for (int i = 0; i < count; i++)
             {
                 _tabs.TabPages[i].ClientSizeChanged += delegate { LayoutPages(); };
                 TabPage headerPage = _tabs.TabPages[i];
@@ -308,6 +318,16 @@ namespace DeviceBattery
                 {
                     PaintPageHeader(e.Graphics, headerPage, UiScale.RawFactor(this));
                 };
+
+                // 页头由 TabPage 自绘固定在顶部；下面整块交给自绘滚动容器。
+                Panel content = new Panel();
+                content.BackColor = Theme.Background;
+                EnableDoubleBuffer(content);
+                ScrollHost host = new ScrollHost();
+                host.Attach(content);
+                _tabs.TabPages[i].Controls.Add(host);
+                _pageContent[i] = content;
+                _pageScroll[i] = host;
             }
             // 只在切页时重排 + 重画一次：之前这个事件在循环里被订阅了 7 次，
             // 切一次页要连排 7 遍、窗口高度也跟着改 7 次，画面上就会看到「没渲染完」。
@@ -373,9 +393,10 @@ namespace DeviceBattery
             {
                 page.Invalidate(true);
             }
-            if (_supportView != null)
+            if (_pageScroll != null && _tabs.SelectedIndex >= 0 && _tabs.SelectedIndex < _pageScroll.Length &&
+                _pageScroll[_tabs.SelectedIndex] != null)
             {
-                _supportView.Invalidate(true);
+                _pageScroll[_tabs.SelectedIndex].Invalidate(true);
             }
             _tabs.Invalidate();
             Update();
@@ -405,12 +426,22 @@ namespace DeviceBattery
             return page;
         }
 
-        private static void AddSections(TabPage page, List<SettingsSection> list)
+        /// <summary>
+        /// 合并页统一挂载：常规页 = 通用分组 + 读取分组；关于页 = 关于分组 + 支持分组。
+        /// 顺序按加入列表的先后，所以读取/支持的内容排在原页内容之后。
+        /// </summary>
+        private void MountMergedPages()
+        {
+            if (_pageContent != null && _pageContent.Length >= 1) AddSections(_pageContent[0], _general);
+            if (_pageContent != null && _pageContent.Length >= 5) AddSections(_pageContent[4], _about);
+        }
+
+        private static void AddSections(Control host, List<SettingsSection> list)
         {
             for (int i = 0; i < list.Count; i++)
             {
                 EnableDoubleBuffer(list[i]);
-                page.Controls.Add(list[i]);
+                host.Controls.Add(list[i]);
             }
         }
 
@@ -545,20 +576,22 @@ namespace DeviceBattery
         private static string PageCaption(TabPage page)
         {
             string text = page == null ? "" : page.Text;
-            if (text == "通用") return "启动方式、主题与电量历史";
+            if (text == "常规") return "启动、主题、查询间隔与电量历史";
             if (text == "显示") return "托盘图标与面板上显示什么";
-            if (text == "读取") return "多久检查一次外设电量";
             if (text == "通知") return "低电量提醒与免打扰时段";
             if (text == "设备") return "已识别的设备与单独设置";
-            if (text == "支持") return "哪些设备能读到电量";
-            if (text == "关于") return "版本信息与反馈入口";
+            if (text == "关于") return "版本、反馈与支持范围";
             return "";
         }
 
-        /// <summary>页头占用的高度（设计像素 46：标题 20 + 说明 16 + 上下留白）。</summary>
+        /// <summary>
+        /// 页头占用的高度。PaintPageHeader 实际画：标题从 y=10 起、高约 20；
+        /// 说明从 y=32 起、高约 18，底部到 y≈50。这里必须给到 52，
+        /// 否则滚动容器从 34+8=42 开始会把说明文字盖掉半行。
+        /// </summary>
         internal int PageHeaderHeight(float f)
         {
-            return UiScale.Scale(46, f);
+            return UiScale.Scale(52, f);
         }
 
         /// <summary>在页面顶部画标题与说明；正文从 PageHeaderHeight 之后开始排。</summary>

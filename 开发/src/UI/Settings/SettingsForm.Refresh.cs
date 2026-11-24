@@ -11,10 +11,9 @@ namespace DeviceBattery
     internal sealed partial class SettingsForm : Form
     {
 
+        /// <summary>读取设置并入「常规」页：不再单独占一个页签，但控件与行为完全不变。</summary>
         private void BuildRefreshPage()
         {
-            TabPage page = _tabs.TabPages[2];
-
             SettingsSection auto = new SettingsSection("自动查询");
             _interval = NewCombo(new string[]
             {
@@ -30,12 +29,13 @@ namespace DeviceBattery
             _refresh.Add(auto);
 
             SettingsSection rule = new SettingsSection("读取规则");
-            _readRule = NewNote("鼠标、键盘走 HID 上报，耳机走蓝牙 GATT 或 2.4G 接收器。"
-                + "读数需要设备处于唤醒状态；刚开机后的前几次读数可能偏高，稳定后才是真实电量。");
+            _readRule = NewNote("读数来自设备自身上报；设备唤醒后才能读到，刚开机时的读数可能偏高。");
             rule.AddRow(_readRule);
             _refresh.Add(rule);
 
-            AddSections(page, _refresh);
+            // 合并到常规页：只把分组加进 _general，页面控件由 BuildGeneralPage 统一挂载，
+            // 避免同一分组被 AddSections 两次。
+            _general.AddRange(_refresh);
         }
     }
 }

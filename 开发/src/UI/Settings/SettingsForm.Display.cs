@@ -28,11 +28,10 @@ namespace DeviceBattery
 
         private void BuildDisplayPage()
         {
-            TabPage page = _tabs.TabPages[1];
-
+            // 分组挂到本页的内容面板（由 LayoutPages 负责滚动容器尺寸）。
             SettingsSection tray = new SettingsSection("托盘图标");
             _displayMode = NewCombo(new string[] { "所有设备合计", "只显示最低电量", "单台设备" });
-            _iconDevice = NewCombo(new string[] { "自动选择", "鼠标", "键盘", "耳机" });
+            _iconDevice = NewCombo(new string[] { "自动选择", "鼠标", "键盘", "耳机", "手柄" });
             _digitSize = NewCombo(new string[] { "不显示数字（留点）", "较小", "标准", "较大" });
             _iconStyle = NewCombo(new string[] { "柔和（细窄）", "经典（高大）", "圆润（扁矮）" });
             _iconFont = NewCombo(AppSettings.IconFontLabels);
@@ -42,6 +41,7 @@ namespace DeviceBattery
             _iconFont.SelectedIndexChanged += delegate { UpdateIconPreview(); };
             _autoColor = NewCheck("按电量自动配色");
             _autoColor.CheckedChanged += delegate { UpdateColorButton(); };
+            _trayCategoryIcon = NewCheck("在电量旁显示设备类型图标（鼠标/键盘/耳机/手柄）");
             _colorButton = NewButton("选择颜色…", false);
             _colorButton.Click += delegate { PickColor(); };
             tray.AddRow(NewLabel("显示内容", 96), _displayMode);
@@ -51,16 +51,31 @@ namespace DeviceBattery
             tray.AddRow(NewLabel("数字字体", 96), _iconFont);
             tray.AddRow(NewLabel("效果预览", 96), _iconPreview);
             tray.AddRow(_autoColor);
+            tray.AddRow(_trayCategoryIcon);
             tray.AddRow(NewLabel("固定颜色", 96), _colorButton);
             _display.Add(tray);
 
             SettingsSection panel = new SettingsSection("设备面板");
             _showVoltage = NewCheck("在设备卡片里显示电压");
+            _allowVoltageEstimate = NewCheck("按电压估算电量（仅 ZOWIE 等只报电压的设备）");
             panel.AddRow(_showVoltage);
+            panel.AddRow(_allowVoltageEstimate);
             _display.Add(panel);
 
+            SettingsSection widget = new SettingsSection("任务栏（实验）");
+            _taskbarWidget = NewCheck("在任务栏时钟旁显示电量（失败自动回退托盘）");
+            _taskbarOffset = new NumericUpDown();
+            _taskbarOffset.Minimum = -300;
+            _taskbarOffset.Maximum = 300;
+            _taskbarOffset.Value = 0;
+            _taskbarOffset.BackColor = Theme.Input;
+            _taskbarOffset.ForeColor = Theme.Text;
+            widget.AddRow(_taskbarWidget);
+            widget.AddRow(NewLabel("距通知区偏移(px)", 120), _taskbarOffset);
+            _display.Add(widget);
+
             UpdateIconPreview();
-            AddSections(page, _display);
+            AddSections(_pageContent[1], _display);
         }
     }
 }

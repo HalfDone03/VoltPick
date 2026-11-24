@@ -31,7 +31,12 @@ namespace DeviceBattery
                 _iconStyle.SelectedIndex = IconStyleIndex(current.IconStyle);
             _iconFont.SelectedIndex = AppSettings.IconFontIndex(current.IconFont);
                 _autoColor.Checked = current.AutoColor;
+                _trayCategoryIcon.Checked = current.TrayShowCategoryIcon;
                 _showVoltage.Checked = current.ShowVoltage;
+                _allowVoltageEstimate.Checked = current.AllowVoltageEstimate;
+                _taskbarWidget.Checked = current.TaskbarWidgetEnabled;
+                _taskbarOffset.Value = Math.Max(_taskbarOffset.Minimum,
+                    Math.Min(_taskbarOffset.Maximum, current.TaskbarOffsetX));
                 UpdateColorButton();
 
                 _interval.SelectedIndex = IntervalIndex(current.RefreshMinutes);
@@ -66,7 +71,11 @@ namespace DeviceBattery
             current.IconStyle = IconStyleValue();
             current.IconFont = AppSettings.IconFontKey(_iconFont.SelectedIndex);
             current.AutoColor = _autoColor.Checked;
+            current.TrayShowCategoryIcon = _trayCategoryIcon.Checked;
             current.ShowVoltage = _showVoltage.Checked;
+            current.AllowVoltageEstimate = _allowVoltageEstimate.Checked;
+            current.TaskbarWidgetEnabled = _taskbarWidget.Checked;
+            current.TaskbarOffsetX = (int)_taskbarOffset.Value;
             current.RefreshMinutes = IntervalValue();
             current.PauseWhenIdle = _pauseIdle.Checked;
             current.LowBatteryWarning = _lowWarn.Checked;

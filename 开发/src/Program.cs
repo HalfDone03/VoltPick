@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -30,6 +31,12 @@ namespace DeviceBattery
             {
                 string mode = ValueAfter(arguments, "--autostart");
                 Environment.ExitCode = AutoStart.RunFromCommandLine(string.IsNullOrEmpty(mode) ? "on" : mode);
+                return;
+            }
+
+            if (HasArgument(arguments, "--listen"))
+            {
+                Environment.ExitCode = RunListen(ValueAfter(arguments, "--listen"));
                 return;
             }
 
@@ -323,6 +330,56 @@ namespace DeviceBattery
             return false;
         }
 
+        /// <summary>
+        /// --listen VID:PID：只读地探测某个设备的 HID 报文，结果写到 exe 同目录的
+        /// listen-VID-PID.txt 并用记事本打开。这一步只被动读取，不向设备写任何字节。
+        /// </summary>
+        private static int RunListen(string target)
+        {
+            int vid;
+            int pid;
+            if (!ListenTool.TryParseVidPid(target, out vid, out pid))
+            {
+                MessageBox.Show("用法：VoltPick.exe --listen VID:PID\\n\\n例如：VoltPick.exe --listen 1D57:FA60",
+                    "VoltPick", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return 1;
+            }
+
+            const int listenMs = 15000;
+            MessageBox.Show("即将只读探测 " + ListenTool.Hex4(vid) + ":" + ListenTool.Hex4(pid) +
+                " 共 15 秒。\\n\\n点确定后请持续操作这个设备（动鼠标、按键、插拔充电线），" +
+                "程序只读取报告、不会向设备写入任何内容。",
+                "VoltPick · 报文探测", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            try
+            {
+                string text = ListenTool.Run(vid, pid, listenMs);
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                    "listen-" + ListenTool.Hex4(vid) + "-" + ListenTool.Hex4(pid) + ".txt");
+                File.WriteAllText(path, text, new UTF8Encoding(false));
+                try
+                {
+                    Process.Start(new ProcessStartInfo("notepad.exe", "\"" + path + "\"")
+                    {
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception)
+                {
+                    MessageBox.Show("探测结果已写到：\\n" + path, "VoltPick",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("--listen 失败：" + ex);
+                MessageBox.Show("探测失败：" + ex.Message, "VoltPick",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 3;
+            }
+        }
+
         private static void ShowHelp()
         {
             MessageBox.Show(
@@ -334,6 +391,7 @@ namespace DeviceBattery
                     "  VoltPick.exe --once          读取一次，写出 device-battery-once.json\n" +
                 "  VoltPick.exe --snapshot      同 --once\n" +
                 "  VoltPick.exe --autostart on|off\n" +
+                "  VoltPick.exe --listen VID:PID 只读探测设备报文（如 --listen 1D57:FA60）\n" +
                 "  VoltPick.exe --portable      使用 exe 同目录的 settings.json\n" +
                 "  VoltPick.exe --no-portable   使用 %APPDATA%\\VoltPick\\settings.json\n",
                 "VoltPick", MessageBoxButtons.OK, MessageBoxIcon.Information);

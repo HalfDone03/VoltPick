@@ -131,6 +131,11 @@ namespace DeviceBattery
             };
             bottom.Controls.Add(clearLog);
 
+            SurfaceButton listen = new SurfaceButton();
+            listen.Text = "报文探测…";
+            listen.Click += delegate { ShowListenDialog(); };
+            bottom.Controls.Add(listen);
+
             SurfaceButton close = new SurfaceButton();
             close.Text = "关闭";
             close.Size = new Size(86, 28);
@@ -705,6 +710,93 @@ namespace DeviceBattery
                     MessageBox.Show(this, "导出失败：" + ex.Message, "VoltPick",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 从诊断页进入只读报文探测：先问 VID:PID（设备列表里就能看到），
+        /// 再听 15 秒设备主动推的报告，结果写到 exe 同目录并用记事本打开。
+        /// </summary>
+        private void ShowListenDialog()
+        {
+            string hint = "输入设备的 VID:PID（16 进制，例如 373B:11FE）。\\n\\n" +
+                "设备列表里可以看到每台设备的 VID/PID；探测过程只读取报告，不会向设备写入。";
+            string input = InputBox("报文探测", hint, "");
+            if (input == null)
+            {
+                return;
+            }
+            int vid;
+            int pid;
+            if (!ListenTool.TryParseVidPid(input, out vid, out pid))
+            {
+                MessageBox.Show(this, "VID:PID 格式不对，应形如 373B:11FE。", "VoltPick",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (MessageBox.Show(this, "即将只读探测 " + ListenTool.Hex4(vid) + ":" + ListenTool.Hex4(pid) +
+                    " 共 15 秒。\\n\\n点确定后请持续操作这个设备（动鼠标、按键、插拔充电线）。",
+                    "VoltPick · 报文探测", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK)
+            {
+                return;
+            }
+            try
+            {
+                string text = ListenTool.Run(vid, pid, 15000);
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                    "listen-" + ListenTool.Hex4(vid) + "-" + ListenTool.Hex4(pid) + ".txt");
+                File.WriteAllText(path, text, new UTF8Encoding(false));
+                try { System.Diagnostics.Process.Start("notepad.exe", "\"" + path + "\""); }
+                catch (Exception) { MessageBox.Show(this, "结果已写到：\\n" + path, "VoltPick"); }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "探测失败：" + ex.Message, "VoltPick",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>一个极简的输入框：不引入额外窗体文件，仅此一处用。</summary>
+        private static string InputBox(string title, string prompt, string defaultValue)
+        {
+            using (Form form = new Form())
+            {
+                form.Text = title;
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.MinimizeBox = false;
+                form.MaximizeBox = false;
+                form.ShowInTaskbar = false;
+                form.ClientSize = new Size(360, 128);
+                form.Font = Theme.UiFont(Theme.FontBody, FontStyle.Regular);
+                form.BackColor = Theme.Background;
+                form.ForeColor = Theme.Text;
+                Label label = new Label();
+                label.Text = prompt;
+                label.Location = new Point(14, 12);
+                label.Size = new Size(332, 40);
+                form.Controls.Add(label);
+                TextBox text = new TextBox();
+                text.Location = new Point(14, 56);
+                text.Size = new Size(332, 24);
+                text.Text = defaultValue ?? "";
+                form.Controls.Add(text);
+                Button ok = new Button();
+                ok.Text = "确定";
+                ok.DialogResult = DialogResult.OK;
+                ok.Location = new Point(196, 92);
+                ok.Size = new Size(72, 26);
+                form.Controls.Add(ok);
+                Button cancel = new Button();
+                cancel.Text = "取消";
+                cancel.DialogResult = DialogResult.Cancel;
+                cancel.Location = new Point(274, 92);
+                cancel.Size = new Size(72, 26);
+                form.Controls.Add(cancel);
+                form.AcceptButton = ok;
+                form.CancelButton = cancel;
+                text.Focus();
+                return form.ShowDialog() == DialogResult.OK ? text.Text : null;
             }
         }
     }

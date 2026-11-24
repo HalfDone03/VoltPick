@@ -289,7 +289,8 @@ namespace DeviceBattery
                 case DeviceCategory.Mouse: return 0;
                 case DeviceCategory.Headset: return 1;
                 case DeviceCategory.Keyboard: return 2;
-                default: return 3;
+                case DeviceCategory.Gamepad: return 3;
+                default: return 4;
             }
         }
 
@@ -824,10 +825,19 @@ namespace DeviceBattery
 
         private void DrawHeader(Graphics g)
         {
+            // 标题左侧一个强调色小圆点：和托盘图标呼应，也给纯文字标题一个视觉锚点。
+            using (GraphicsPath dot = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                dot.AddArc(new RectangleF(Px(15), Px(16), Px(8), Px(8)), 0, 360);
+                using (SolidBrush brush = new SolidBrush(Theme.Blue))
+                {
+                    g.FillPath(brush, dot);
+                }
+            }
             Font title = Theme.PaintFont(Theme.FontTitle, FontStyle.Bold);
             using (SolidBrush brush = new SolidBrush(Theme.Text))
             {
-                g.DrawString("VoltPick", title, brush, Px(16), Px(12));
+                g.DrawString("VoltPick", title, brush, Px(29), Px(10));
             }
 
             int count = _snapshot == null ? 0 : _snapshot.Devices.Count;
@@ -860,8 +870,8 @@ namespace DeviceBattery
             Font subtitleFont = Theme.PaintFont(Theme.FontSmall, FontStyle.Regular);
             using (SolidBrush brush = new SolidBrush(Theme.Muted))
             {
-                // 副标题与标题共用同一条左边缘（原来是 27，标题是 16，看着像缩进错位）。
-                g.DrawString(subtitle, subtitleFont, brush, Px(16), Px(34));
+                // 副标题与标题左边缘对齐（标题从圆点右侧 29 开始）。
+                g.DrawString(subtitle, subtitleFont, brush, Px(29), Px(34));
             }
 
             _refreshRect = new Rectangle(Width - Px(76), Px(13), Px(62), Px(26));
@@ -899,7 +909,15 @@ namespace DeviceBattery
             {
                 g.FillPath(accentBrush, accentPath);
             }
-            DrawDeviceIcon(g, new Rectangle(rect.Left + Px(16), rect.Top + Px(14), Px(26), Px(26)),
+            // 图标底托：一个淡色圆角方块，让线性图标在渐变卡片上有“附着点”，
+            // 不再像悬在半空的一根线稿。
+            Rectangle iconBox = new Rectangle(rect.Left + Px(13), rect.Top + Px(11), Px(32), Px(32));
+            using (GraphicsPath boxPath = Rounded(iconBox, Px(9)))
+            using (SolidBrush boxBrush = new SolidBrush(Theme.Alpha(accent, Theme.IsDark ? 28 : 20)))
+            {
+                g.FillPath(boxBrush, boxPath);
+            }
+            DrawDeviceIcon(g, new Rectangle(iconBox.Left + Px(4), iconBox.Top + Px(3), Px(24), Px(26)),
                 device.Category, accent);
 
             // 右上角从外到内是「交通方式胶囊」和「低电」标签，名称的可用宽度跟着它们算，
@@ -914,7 +932,7 @@ namespace DeviceBattery
             int nameLeft = rect.Left + Px(52);
             Rectangle nameRect = new Rectangle(nameLeft, rect.Top + Px(15),
                 Math.Max(Px(40), nameRight - nameLeft), Px(24));
-            DrawText(g, device.DisplayName, nameRect, Theme.Text, 10.5f, FontStyle.Bold, true);
+            DrawText(g, device.DisplayName, nameRect, Theme.Text, Theme.FontPanelBody, FontStyle.Bold, true);
 
             if (low)
             {
@@ -935,11 +953,11 @@ namespace DeviceBattery
             int statusLeft = nameLeft + Px(110);
             Rectangle statusRect = new Rectangle(statusLeft, rect.Top + Px(41),
                 Math.Max(Px(40), rowRight - statusLeft), Px(34));
-            DrawText(g, status, statusRect, accent, 8.5f, FontStyle.Bold, false, ContentAlignment.MiddleRight);
+            DrawText(g, status, statusRect, accent, Theme.FontPanelCaption, FontStyle.Bold, false, ContentAlignment.MiddleRight);
 
-            // 进度条铺满整行：原来只有 172px，右半张卡片空着，像没排完版。
-            Rectangle bar = new Rectangle(nameLeft, rect.Top + Px(79),
-                Math.Max(Px(40), rowRight - nameLeft), Px(6));
+            // 进度条铺满整行；高度 8px 让它在小卡片里仍清晰可见（6px 太细，远看像一根线）。
+            Rectangle bar = new Rectangle(nameLeft, rect.Top + Px(78),
+                Math.Max(Px(40), rowRight - nameLeft), Px(8));
             DrawBar(g, bar, showPercent ? percent : 0, accent,
                 device.Status == DeviceStatus.Unsupported || device.Status == DeviceStatus.Offline ||
                 device.Status == DeviceStatus.BluetoothOff);
@@ -954,7 +972,7 @@ namespace DeviceBattery
                 rowRight - nameLeft - (hasLink ? linkWidth + Px(6) : 0));
             Rectangle detailRect = new Rectangle(nameLeft, rect.Top + Px(88),
                 detailWidth, Px(16));
-            DrawText(g, detail, detailRect, Theme.Muted, 8f, FontStyle.Regular, true);
+            DrawText(g, detail, detailRect, Theme.Muted, Theme.FontPanelCaption, FontStyle.Regular, true);
 
             if (hasLink)
             {
@@ -993,30 +1011,39 @@ namespace DeviceBattery
             }
 
             int hidden = _snapshot == null ? 0 : _snapshot.HiddenDeviceCount;
-            // 读不到电量的设备按规则一律不显示，所以面板可能一台都没有：
-            // 空态必须把“没检测到可读取电量的设备”讲清楚，而不是留一张空白卡片。
-            DrawText(g, "未检测到可读取电量的设备", new Rectangle(rect.Left + Px(16), rect.Top + Px(16),
-                rect.Width - Px(32), Px(22)), Theme.Text, 11f, FontStyle.Bold, false);
-            // 行距按 18px 设计：三行说明 + 一个链接刚好排满 104px 的卡片，
-            // 各行矩形不再相互压住（旧间距里第三行和链接重叠了 2px）。
+            // 空态：左侧一个淡色状态图标 + 右侧「标题 / 说明 / 操作」三档层次。
+            // 原来是纯文字堆在一起，标题和说明字号接近、行距挤，看着像一排小字。
+            using (GraphicsPath ring = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                ring.AddArc(new RectangleF(rect.Left + Px(16), rect.Top + Px(18), Px(30), Px(30)), 0, 360);
+                using (Pen pen = new Pen(Theme.Faint, Px(2)))
+                {
+                    g.DrawPath(pen, ring);
+                }
+                DrawText(g, "?", new Rectangle(rect.Left + Px(16), rect.Top + Px(18), Px(30), Px(30)),
+                    Theme.Faint, Theme.FontPanelBody, FontStyle.Bold, false, ContentAlignment.MiddleCenter);
+            }
+            int textLeft = rect.Left + Px(58);
+            int textWidth = rect.Right - Px(14) - textLeft;
+            DrawText(g, "未检测到可读取电量的设备", new Rectangle(textLeft, rect.Top + Px(16),
+                textWidth, Px(24)), Theme.Text, Theme.FontPanelBody, FontStyle.Bold, false);
             if (hidden > 0)
             {
-                DrawText(g, hidden + " 台已记录设备当前读不到电量，按规则不显示", new Rectangle(rect.Left + Px(16),
-                    rect.Top + Px(46), rect.Width - Px(32), Px(18)), Theme.Muted, 8.5f, FontStyle.Regular, false);
-                // 之前这里还有一行「点下面的『显示』挑出来」，指的就是页脚那个按钮；
-                // 现在空状态只留这一个链接入口，那行提示就成了误导，删掉。
+                DrawText(g, hidden + " 台已记录设备当前读不到电量，按规则不显示",
+                    new Rectangle(textLeft, rect.Top + Px(42), textWidth, Px(20)),
+                    Theme.Muted, Theme.FontPanelCaption, FontStyle.Regular, false);
                 _emptyLinkIsUnhide = true;
-                _bluetoothRect = new Rectangle(rect.Left + Px(16), rect.Top + Px(70), Px(168), Px(20));
+                _bluetoothRect = new Rectangle(textLeft, rect.Top + Px(68), Px(176), Px(24));
                 DrawLink(g, _bluetoothRect, "显示被隐藏的 " + hidden + " 台设备", _hover == 3);
             }
             else
             {
-                    _emptyLinkIsUnhide = false;
-                DrawText(g, "键盘 / 鼠标：支持标准 HID 电量", new Rectangle(rect.Left + Px(16), rect.Top + Px(46),
-                    rect.Width - Px(32), Px(18)), Theme.Muted, 8.5f, FontStyle.Regular, false);
-                DrawText(g, "耳机：使用蓝牙连接；2.4G 接收器不提供电量", new Rectangle(rect.Left + Px(16), rect.Top + Px(66),
-                    rect.Width - Px(32), Px(18)), Theme.Muted, 8.5f, FontStyle.Regular, false);
-                _bluetoothRect = new Rectangle(rect.Left + Px(16), rect.Top + Px(88), Px(92), Px(16));
+                _emptyLinkIsUnhide = false;
+                DrawText(g, "键盘 / 鼠标支持标准 HID 电量", new Rectangle(textLeft, rect.Top + Px(42),
+                    textWidth, Px(20)), Theme.Muted, Theme.FontPanelCaption, FontStyle.Regular, false);
+                DrawText(g, "耳机请使用蓝牙连接；2.4G 接收器不提供电量", new Rectangle(textLeft, rect.Top + Px(60),
+                    textWidth, Px(20)), Theme.Muted, Theme.FontPanelCaption, FontStyle.Regular, false);
+                _bluetoothRect = new Rectangle(textLeft, rect.Top + Px(82), Px(120), Px(20));
                 DrawLink(g, _bluetoothRect, "打开蓝牙设置", _hover == 3);
             }
         }
@@ -1073,9 +1100,16 @@ namespace DeviceBattery
                     status = _snapshot.BluetoothRadioOn ? "蓝牙：开" : "蓝牙：关";
                 }
             }
-            Rectangle statusRect = new Rectangle(Px(14), Height - Px(20),
-                Width - Px(28), Px(16));
-            DrawText(g, status, statusRect, Theme.Faint, 8f, FontStyle.Regular, false, ContentAlignment.MiddleCenter);
+            // 状态条：给一个圆角底托 + 稍亮的文字，和上面的按钮条拉开层次。
+            // 原来 8f 淡灰字直接画在面板底上，几乎看不清。
+            Rectangle statusRect = new Rectangle(Px(14), Height - Px(22),
+                Width - Px(28), Px(18));
+            using (GraphicsPath path = Rounded(statusRect, Px(5)))
+            using (SolidBrush brush = new SolidBrush(Theme.Alpha(Theme.Chip, Theme.IsDark ? 90 : 130)))
+            {
+                g.FillPath(brush, path);
+            }
+            DrawText(g, status, statusRect, Theme.Muted, Theme.FontPanelCaption, FontStyle.Regular, false, ContentAlignment.MiddleCenter);
         }
 
         private void DrawScrollbar(Graphics g)
@@ -1298,6 +1332,25 @@ namespace DeviceBattery
                         }
                     }
                 }
+                else if (category == DeviceCategory.Gamepad)
+                {
+                    // 手柄：圆角机身 + 左右握把 + 中间的方向键轮廓。
+                    using (GraphicsPath body = Rounded(new RectangleF(rect.X + rect.Width * 0.08f,
+                        rect.Y + rect.Height * 0.28f, rect.Width * 0.84f, rect.Height * 0.44f),
+                        rect.Width * 0.20f))
+                    {
+                        g.FillPath(brush, body);
+                        g.DrawPath(pen, body);
+                    }
+                    g.DrawLine(pen, rect.X + rect.Width * 0.22f, rect.Y + rect.Height * 0.50f,
+                        rect.X + rect.Width * 0.38f, rect.Y + rect.Height * 0.50f);
+                    g.DrawLine(pen, rect.X + rect.Width * 0.30f, rect.Y + rect.Height * 0.42f,
+                        rect.X + rect.Width * 0.30f, rect.Y + rect.Height * 0.58f);
+                    g.DrawEllipse(pen, rect.X + rect.Width * 0.60f, rect.Y + rect.Height * 0.46f,
+                        rect.Width * 0.06f, rect.Height * 0.06f);
+                    g.DrawEllipse(pen, rect.X + rect.Width * 0.70f, rect.Y + rect.Height * 0.42f,
+                        rect.Width * 0.06f, rect.Height * 0.06f);
+                }
                 else
                 {
                     g.DrawArc(pen, rect.X + rect.Width * 0.12f, rect.Y + rect.Height * 0.08f,
@@ -1319,7 +1372,7 @@ namespace DeviceBattery
         private void DrawPercent(Graphics g, Rectangle rect, string text, bool hasValue, Color color, bool charging)
         {
             // 读不到电量时只是一条破折号，用 22pt 画出来又大又空，压成 15pt 更像个占位符。
-            Font big = Theme.PaintFont(hasValue ? 22f : 15f, FontStyle.Bold);
+            Font big = Theme.PaintFont(hasValue ? Theme.FontPanelValue : 15f, FontStyle.Bold);
             Font small = Theme.PaintFont(Theme.FontSmall, FontStyle.Bold);
             using (SolidBrush brush = new SolidBrush(hasValue ? color : Theme.Faint))
             {
@@ -1369,9 +1422,14 @@ namespace DeviceBattery
             int width = Math.Max(rect.Height, (int)Math.Round(rect.Width * Math.Min(100, percent) / 100.0));
             Rectangle fill = new Rectangle(rect.Left, rect.Top, width, rect.Height);
             using (GraphicsPath path = Rounded(fill, rect.Height / 2f))
-            using (SolidBrush brush = new SolidBrush(color))
             {
-                g.FillPath(brush, path);
+                // 竖向微渐变：顶部亮一点、底部沉一点，进度条不再是死板的一条纯色。
+                Color top = Theme.Lighten(color, 0.12f);
+                using (LinearGradientBrush brush = new LinearGradientBrush(fill, top, color,
+                    LinearGradientMode.Vertical))
+                {
+                    g.FillPath(brush, path);
+                }
             }
         }
 
@@ -1379,6 +1437,8 @@ namespace DeviceBattery
         {
             // 浅色主题下 Theme.Button 是纯白，画在近白的面板底上只剩一条淡边，
             // 看着像“一条小条”，这里单独给浅色主题一点灰调。
+            // 页脚这类次要按钮：浅色主题仍用淡灰填充（纯白会融进近白面板底），
+            // 但两种主题都给 1px 描边，按钮边界清楚，不再像飘着的文字。
             Color fill = hover ? Theme.ButtonHover : Theme.Button;
             if (!Theme.IsDark)
             {
@@ -1390,15 +1450,12 @@ namespace DeviceBattery
                 {
                     g.FillPath(brush, path);
                 }
-                if (!subtle)
+                using (Pen pen = new Pen(hover ? Theme.Lighten(Theme.Border, 0.25f) : Theme.Border, 1f))
                 {
-                    using (Pen pen = new Pen(Theme.Border, 1f))
-                    {
-                        g.DrawPath(pen, path);
-                    }
+                    g.DrawPath(pen, path);
                 }
             }
-            DrawText(g, text, rect, subtle ? Theme.Muted : Theme.Text, 8.5f, FontStyle.Bold, false, ContentAlignment.MiddleCenter);
+            DrawText(g, text, rect, hover ? Theme.Text : Theme.Muted, Theme.FontPanelBody, FontStyle.Bold, false, ContentAlignment.MiddleCenter);
         }
 
         /// <summary>
@@ -1411,7 +1468,7 @@ namespace DeviceBattery
             {
                 return Px(38);
             }
-            Font font = Theme.PaintFont(7.5f, FontStyle.Bold);
+            Font font = Theme.PaintFont(Theme.FontPanelCaption, FontStyle.Bold);
             SizeF size = g.MeasureString(text, font, PointF.Empty, StringFormat.GenericTypographic);
             int width = (int)Math.Ceiling(size.Width) + Px(16);
             if (width < Px(38)) width = Px(38);
@@ -1426,7 +1483,7 @@ namespace DeviceBattery
             {
                 g.FillPath(brush, path);
             }
-            DrawText(g, text, rect, Theme.Muted, 7.5f, FontStyle.Bold, false, ContentAlignment.MiddleCenter);
+            DrawText(g, text, rect, Theme.Muted, Theme.FontPanelCaption, FontStyle.Bold, false, ContentAlignment.MiddleCenter);
         }
 
         private void DrawTag(Graphics g, Rectangle rect, string text)
@@ -1436,12 +1493,12 @@ namespace DeviceBattery
             {
                 g.FillPath(brush, path);
             }
-            DrawText(g, text, rect, Theme.Red, 7.5f, FontStyle.Bold, false, ContentAlignment.MiddleCenter);
+            DrawText(g, text, rect, Theme.Red, Theme.FontPanelCaption, FontStyle.Bold, false, ContentAlignment.MiddleCenter);
         }
 
         private void DrawLink(Graphics g, Rectangle rect, string text, bool hover)
         {
-            DrawText(g, text, rect, hover ? Theme.Text : Theme.Blue, 8f, FontStyle.Bold, false, ContentAlignment.MiddleRight);
+            DrawText(g, text, rect, hover ? Theme.Text : Theme.Blue, Theme.FontPanelCaption, FontStyle.Bold, false, ContentAlignment.MiddleRight);
         }
 
         /// <summary>

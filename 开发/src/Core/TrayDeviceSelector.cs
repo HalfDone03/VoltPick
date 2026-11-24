@@ -37,6 +37,10 @@ namespace DeviceBattery
                 {
                     fixedDevice = device;
                 }
+                else if (fixedMode == "gamepad" && device.Category == DeviceCategory.Gamepad)
+                {
+                    fixedDevice = device;
+                }
 
                 if (device.HasValue &&
                     (best == null || device.PercentOrZero < best.PercentOrZero))

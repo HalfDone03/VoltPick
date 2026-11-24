@@ -91,12 +91,21 @@ namespace DeviceBattery
                     {
                         g.FillPath(brush, path);
                     }
-                    using (SolidBrush accent = new SolidBrush(Theme.Blue))
+                    // 选中下划线改成圆角短条，和分组卡片的小圆点呼应，
+                    // 不再是一条硬邦邦的直角矩形。
+                    Rectangle underline = new Rectangle(pill.Left + 12, pill.Bottom - 4,
+                        pill.Width - 24, UiScale.Px(this, 3));
+                    using (GraphicsPath bar = Rounded(underline, UiScale.Px(this, 2)))
+                    using (SolidBrush accent = new SolidBrush(Theme.IsDark ? Theme.Blue : Theme.Darken(Theme.Blue, 0.18f)))
                     {
-                        g.FillRectangle(accent, pill.Left + 12, pill.Bottom - 3, pill.Width - 24, 2);
+                        g.FillPath(accent, bar);
                     }
                 }
-                TextRenderer.DrawText(g, TabPages[i].Text, Font, pill,
+                // 选中项用粗体、未选中常规：一级导航的层级一眼可辨。
+                Font tabFont = selected
+                    ? Theme.PaintFont(Theme.FontBody, FontStyle.Bold)
+                    : Theme.PaintFont(Theme.FontBody, FontStyle.Regular);
+                TextRenderer.DrawText(g, TabPages[i].Text, tabFont, pill,
                     selected ? Theme.Text : Theme.Muted,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             }

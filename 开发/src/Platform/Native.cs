@@ -172,6 +172,20 @@ namespace DeviceBattery
         [DllImport("hid.dll", SetLastError = true)]
         public static extern bool HidD_SetFeature(IntPtr HidDeviceObject, byte[] ReportBuffer, int ReportBufferLength);
 
+        // 发请求前清空驱动里的陈旧输入报告。接收器会把上一轮的迟到回包排队，
+        // 不清掉的话下一次查询读到的可能是上一轮的答案（问 A 拿到 B 的电量）。
+        [DllImport("hid.dll", SetLastError = true)]
+        public static extern bool HidD_FlushQueue(IntPtr HidDeviceObject);
+
+        // 按报告 ID 主动取一条输入报告：有的集合只在收到请求后把答案放在输入报告里
+        // （ZOWIE、Areson 就是请求走 feature、回包走 input）。
+        [DllImport("hid.dll", SetLastError = true)]
+        public static extern bool HidD_GetInputReport(IntPtr HidDeviceObject, byte[] ReportBuffer, int ReportBufferLength);
+
+        // 输出报告通道：部分接收器（参考项目的 Evision 键盘）只认 output report。
+        [DllImport("hid.dll", SetLastError = true)]
+        public static extern bool HidD_SetOutputReport(IntPtr HidDeviceObject, byte[] ReportBuffer, int ReportBufferLength);
+
         // 用 IntPtr（原生缓冲区）而不是 HIDP_VALUE_CAPS[]：数组长度由 HidP_GetValueCaps 回填，
         // 显式按 HidpValueCapsSize 步长解析，步长只有一处来源，也便于单测直接喂字节。
         [DllImport("hid.dll", SetLastError = true)]
@@ -307,6 +321,112 @@ namespace DeviceBattery
 
         [DllImport("user32.dll")]
         public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int x, int y, int cx, int cy, uint flags);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern IntPtr RegisterWindowMessage(string message);
+
+        [DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int index);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+
+        [DllImport("gdi32.dll")]
+        public static extern bool DeleteObject(IntPtr obj);
+
+        [DllImport("gdi32.dll")]
+        public static extern bool DeleteDC(IntPtr hdc);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct BITMAPINFOHEADER
+        {
+            public int Size;
+            public int Width;
+            public int Height;
+            public short Planes;
+            public short BitCount;
+            public int Compression;
+            public int SizeImage;
+            public int XPelsPerMeter;
+            public int YPelsPerMeter;
+            public int ClrUsed;
+            public int ClrImportant;
+        }
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        public static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFOHEADER bitmapInfo,
+            uint usage, out IntPtr bits, IntPtr sectionHandle, uint offset);
+
+        /// <summary>Explorer 重启后广播 "TaskbarCreated"，任务栏条据此重新定位。</summary>
+        private static int _taskbarCreatedMessage;
+        public static int TaskbarCreatedMessage
+        {
+            get
+            {
+                if (_taskbarCreatedMessage == 0)
+                {
+                    _taskbarCreatedMessage = (int)RegisterWindowMessage("TaskbarCreated");
+                }
+                return _taskbarCreatedMessage;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct BLENDFUNCTION
+        {
+            public byte BlendOp;
+            public byte BlendFlags;
+            public byte SourceConstantAlpha;
+            public byte AlphaFormat;
+        }
+
+        /// <summary>UpdateLayeredWindow 用 AC_SRC_ALPHA：位图自带逐像素 alpha。</summary>
+        public const byte AC_SRC_ALPHA = 0x01;
+        public const uint ULW_ALPHA = 0x00000002;
+        public const int SM_CXSCREEN = 0;
+        public const int SM_CYSCREEN = 1;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool UpdateLayeredWindow(IntPtr hWnd, IntPtr hdcDst,
+            ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc,
+            uint crKey, ref BLENDFUNCTION pblend, uint dwFlags);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+            public POINT(int x, int y) { X = x; Y = y; }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SIZE
+        {
+            public int CX;
+            public int CY;
+            public SIZE(int cx, int cy) { CX = cx; CY = cy; }
+        }
+
+        public static readonly IntPtr HwndTop = new IntPtr(0);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);

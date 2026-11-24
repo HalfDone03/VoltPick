@@ -13,8 +13,6 @@ namespace DeviceBattery
 
         private void BuildAboutPage()
         {
-            TabPage page = _tabs.TabPages[6];
-
             SettingsSection about = new SettingsSection("关于 " + AppInfo.DisplayName);
             _versionLabel = NewNote(AppInfo.DisplayName + " 是一个只在本机运行的托盘工具，用来看鼠标、键盘和耳机的电量。"
                 + "读数来自 HID、蓝牙 GATT 和 2.4G 接收器，不联网，也不上传任何数据。");
@@ -77,7 +75,7 @@ namespace DeviceBattery
             data.AddRow(_openFolder, _reset);
             _about.Add(data);
 
-            AddSections(page, _about);
+            // 分组先留在 _about，等支持页的分组也加入后由 MountMergedPages 统一挂载。
         }
     }
 }

@@ -53,7 +53,8 @@ $testOutputs = @(
     (Join-Path $testDir 'TestHarness.exe'),
     (Join-Path $testDir 'tray-smoke.exe'),
     (Join-Path $testDir 'history-smoke.exe'),
-    (Join-Path $testDir 'panel-scroll-smoke.exe')
+    (Join-Path $testDir 'panel-scroll-smoke.exe'),
+    (Join-Path $testDir 'listen-smoke.exe')
 )
 try {
     Build-Harness 'TestHarness' 'tools\TestHarness.cs' $testOutputs[0]
@@ -67,6 +68,9 @@ try {
 
     Build-Harness 'DeviceBattery.PanelScrollSmoke' 'tools\PanelScrollSmoke.cs' $testOutputs[3]
     Run-Harness $testOutputs[3]
+
+    Build-Harness 'ListenSmoke' 'tools\ListenSmoke.cs' $testOutputs[4]
+    Run-Harness $testOutputs[4]
 
     Write-Host 'All tests passed.'
 }

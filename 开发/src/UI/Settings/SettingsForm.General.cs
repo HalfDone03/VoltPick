@@ -14,8 +14,6 @@ namespace DeviceBattery
 
         private void BuildGeneralPage()
         {
-            TabPage page = _tabs.TabPages[0];
-
             SettingsSection start = new SettingsSection("启动与运行");
             _autoStart = NewCheck("开机自动启动");
             _startWithPanel = NewCheck("启动时打开设备面板");
@@ -32,7 +30,7 @@ namespace DeviceBattery
             look.AddRow(_configPath);
             _general.Add(look);
 
-            AddSections(page, _general);
+            // 分组先留在 _general，等读取页的分组也加入后由 MountMergedPages 统一挂载。
         }
     }
 }

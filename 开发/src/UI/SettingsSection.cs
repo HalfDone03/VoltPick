@@ -88,14 +88,24 @@ namespace DeviceBattery
             int titleH = _titleFont.Height + UiScale.Px(this, 2);
             int barW = UiScale.Px(this, 3);
             int barH = UiScale.Px(this, 14);
-            using (SolidBrush accent = new SolidBrush(Theme.Blue))
+            // 强调条用圆角，颜色按主题取柔和的蓝：深色下亮一点、浅色下沉一点，
+            // 比原来纯 Theme.Blue 的方块更像 Win11 设置页的分组标记。
+            Rectangle accentRect = new Rectangle(padX, titleTop + (titleH - barH) / 2, barW, barH);
+            using (GraphicsPath accentPath = Surface.Rounded(this, accentRect, 2))
+            using (SolidBrush accent = new SolidBrush(Theme.IsDark ? Theme.Blue : Theme.Darken(Theme.Blue, 0.18f)))
             {
-                g.FillRectangle(accent, padX, titleTop + (titleH - barH) / 2, barW, barH);
+                g.FillPath(accent, accentPath);
             }
             TextRenderer.DrawText(g, _title, _titleFont,
                 new Rectangle(padX + barW + UiScale.Px(this, 8), titleTop,
                     Math.Max(0, Width - padX * 2 - barW), titleH),
                 Theme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            // 标题与控件之间一条淡分隔线，让"标题区 / 内容区"分层清楚。
+            int lineY = titleTop + titleH + UiScale.Px(this, 5);
+            using (Pen line = new Pen(Theme.Divider, 1f))
+            {
+                g.DrawLine(line, padX, lineY, Width - padX, lineY);
+            }
             // 给下拉框补一圈描边：FlatStyle.Flat 的 ComboBox 在深色卡片上几乎没有边框，
             // 看着像一段悬空文字。这里在控件外侧补 1px，颜色和卡片分隔线一致。
             g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
@@ -140,7 +150,7 @@ namespace DeviceBattery
             _factor = factor <= 0.1f ? 1f : factor;
             int padX = UiScale.Scale(14, _factor);
             // 标题区 = 上留白 + 标题实际字高 + 与正文的间距，保证粗体字底不被压住。
-            int titleH = _titleFont.Height + UiScale.Scale(22, factor);
+            int titleH = _titleFont.Height + UiScale.Scale(18, factor);
             int gapY = UiScale.Scale(8, factor);
             int gapX = UiScale.Scale(12, factor);
             int bottom = UiScale.Scale(12, factor);

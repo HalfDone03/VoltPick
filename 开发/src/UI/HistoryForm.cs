@@ -21,6 +21,7 @@ namespace DeviceBattery
         private readonly ComboBox _devices;
         private readonly ComboBox _range;
         private readonly HistoryChart _chart;
+        private readonly BatteryStatsView _statsView;
         private readonly Label _deviceLabel;
         private readonly Label _rangeLabel;
         private readonly Label _summary;
@@ -31,11 +32,13 @@ namespace DeviceBattery
         private readonly Timer _timer;
         private readonly FontBag _fonts = new FontBag();
         private List<BatteryHistorySeries> _series = new List<BatteryHistorySeries>();
+        private readonly BatterySnapshot _snapshot;
         private string _selectedId;
         private float _scale = 1f;
 
-        public HistoryForm(string initialDeviceId)
+        public HistoryForm(string initialDeviceId, BatterySnapshot snapshot = null)
         {
+            _snapshot = snapshot;
             _selectedId = initialDeviceId;
             Text = "VoltPick · 电量历史";
             AppIcon.Apply(this);
@@ -70,6 +73,7 @@ namespace DeviceBattery
             _range.ForeColor = Theme.Text;
             _range.Items.Add("最近 24 小时");
             _range.Items.Add("最近 7 天");
+            _range.Items.Add("统计");
             _range.SelectedIndex = 0;
             _range.SelectedIndexChanged += delegate { UpdateChart(); };
             Controls.Add(_range);
@@ -84,6 +88,10 @@ namespace DeviceBattery
 
             _chart = new HistoryChart();
             Controls.Add(_chart);
+
+            _statsView = new BatteryStatsView();
+            _statsView.Visible = false;
+            Controls.Add(_statsView);
 
             _summary = new Label();
             _summary.ForeColor = Theme.Text;
@@ -217,6 +225,8 @@ namespace DeviceBattery
                 int chartHeight = Math.Max(Px(120), ClientSize.Height - chartTop - Px(106));
                 _chart.Location = new Point(Px(16), chartTop);
                 _chart.Size = new Size(chartWidth, chartHeight);
+                _statsView.Location = _chart.Location;
+                _statsView.Size = _chart.Size;
 
                 _summary.Location = new Point(Px(16), ClientSize.Height - Px(96));
                 _summary.Size = new Size(Math.Max(Px(120), ClientSize.Width - Px(32)), Px(24));
@@ -405,12 +415,38 @@ namespace DeviceBattery
 
         private void UpdateChart()
         {
+            bool statsMode = _range.SelectedIndex == 2;
+            _chart.Visible = !statsMode;
+            _statsView.Visible = statsMode;
+
             HistoryChoice choice = _devices.SelectedItem as HistoryChoice;
             if (choice == null)
             {
                 _chart.Series = null;
+                _statsView.SetStats(null, null);
                 _summary.Text = "还没有历史数据";
                 _chart.Invalidate();
+                return;
+            }
+            if (statsMode)
+            {
+                int? currentPercent = null;
+                bool? currentCharging = null;
+                // 当前设备若还在连接中，用它的读数补「剩余时间 / 还需多久充满」。
+                if (_snapshot != null)
+                {
+                    DeviceState current = _snapshot.Find(choice.Series.Id);
+                    if (current != null && current.HasValue)
+                    {
+                        currentPercent = current.PercentOrZero;
+                        currentCharging = current.Status == DeviceStatus.Charging ||
+                            (current.LastReading.Charging.HasValue && current.LastReading.Charging.Value);
+                    }
+                }
+                _statsView.SetStats(BatteryStats.Compute(choice.Series.Samples, currentPercent, currentCharging),
+                    choice.Series.Name);
+                _summary.Text = "统计基于最近 7 天的真实采样；数据不足的项目显示「数据不足」，不做估算。";
+                _note.Text = "历史文件：" + BatteryHistory.FilePath;
                 return;
             }
             DateTime from = DateTime.Now.AddHours(_range.SelectedIndex == 0 ? -24 : -24 * 7);
@@ -541,6 +577,119 @@ namespace DeviceBattery
             {
                 return _text;
             }
+        }
+    }
+
+    /// <summary>
+    /// 统计视图：把 BatteryStats 的关键数字画成卡片。数据不足的项目显示「数据不足」，
+    /// 不显示 0 或猜测值。自绘，跟历史页其它控件共用 Theme 调色板。
+    /// </summary>
+    internal sealed class BatteryStatsView : Control
+    {
+        private BatteryStats _stats;
+        private string _deviceName;
+
+        public BatteryStatsView()
+        {
+            DoubleBuffered = true;
+            BackColor = Theme.Card;
+        }
+
+        public void SetStats(BatteryStats stats, string deviceName)
+        {
+            _stats = stats;
+            _deviceName = deviceName;
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+            using (SolidBrush bg = new SolidBrush(Theme.Card))
+            {
+                g.FillRectangle(bg, ClientRectangle);
+            }
+            Font title = Theme.PaintFont(Theme.FontTitle, FontStyle.Bold);
+            Font body = Theme.PaintFont(Theme.FontBody, FontStyle.Regular);
+            Font valueFont = Theme.PaintFont(Theme.FontValue, FontStyle.Bold);
+            int pad = UiScale.Px(this, 14);
+            int y = pad;
+            using (SolidBrush text = new SolidBrush(Theme.Text))
+            using (SolidBrush faint = new SolidBrush(Theme.Faint))
+            {
+                g.DrawString(string.IsNullOrEmpty(_deviceName) ? "电量统计" : _deviceName + " · 电量统计",
+                    title, text, pad, y, StringFormat.GenericTypographic);
+                y += title.Height + pad;
+
+                if (_stats == null || _stats.Readings == 0)
+                {
+                    g.DrawString("还没有足够的采样数据。连续使用几天后再来看统计。",
+                        body, faint, pad, y, StringFormat.GenericTypographic);
+                    return;
+                }
+
+                int colWidth = Math.Max(120, (ClientSize.Width - pad * 2 - pad) / 2);
+                int rowHeight = Math.Max(UiScale.Px(this, 52), valueFont.Height + body.Height + pad);
+
+                DrawCell(g, pad, y, colWidth, rowHeight, "平均放电",
+                    _stats.DischargeRatePerHour.HasValue
+                        ? BatteryStats.FormatRate(_stats.DischargeRatePerHour.Value) : "数据不足",
+                    _stats.DischargeRatePerHour.HasValue, body, valueFont, text, faint);
+                DrawCell(g, pad + colWidth + pad, y, colWidth, rowHeight, "平均充电",
+                    _stats.ChargeRatePerHour.HasValue
+                        ? BatteryStats.FormatRate(_stats.ChargeRatePerHour.Value) : "数据不足",
+                    _stats.ChargeRatePerHour.HasValue, body, valueFont, text, faint);
+                y += rowHeight;
+
+                DrawCell(g, pad, y, colWidth, rowHeight, "满电可用",
+                    _stats.BatteryLifeHours.HasValue
+                        ? BatteryStats.FormatHours(_stats.BatteryLifeHours.Value) : "数据不足",
+                    _stats.BatteryLifeHours.HasValue, body, valueFont, text, faint);
+                DrawCell(g, pad + colWidth + pad, y, colWidth, rowHeight, "剩余时间",
+                    _stats.RemainingHours.HasValue
+                        ? BatteryStats.FormatHours(_stats.RemainingHours.Value) : "数据不足",
+                    _stats.RemainingHours.HasValue, body, valueFont, text, faint);
+                y += rowHeight;
+
+                DrawCell(g, pad, y, colWidth, rowHeight, "充满需要",
+                    _stats.FullChargeHours.HasValue
+                        ? BatteryStats.FormatHours(_stats.FullChargeHours.Value) : "数据不足",
+                    _stats.FullChargeHours.HasValue, body, valueFont, text, faint);
+                DrawCell(g, pad + colWidth + pad, y, colWidth, rowHeight, "充到满电",
+                    _stats.ToFullHours.HasValue
+                        ? BatteryStats.FormatHours(_stats.ToFullHours.Value) : "数据不足",
+                    _stats.ToFullHours.HasValue, body, valueFont, text, faint);
+                y += rowHeight;
+
+                string lastCharge = _stats.LastCharged.HasValue
+                    ? BatteryHistory.FormatTime(BatteryHistory.FromUnixSeconds(_stats.LastCharged.Value))
+                    : "未记录";
+                string foot = "最近充电 " + lastCharge + " · 监测 " +
+                    BatteryStats.FormatHours(_stats.MonitoredSeconds / 3600.0) + " · " +
+                    _stats.Readings.ToString(System.Globalization.CultureInfo.CurrentCulture) + " 个采样";
+                g.DrawString(foot, body, faint, pad, y + pad, StringFormat.GenericTypographic);
+            }
+            title.Dispose();
+            body.Dispose();
+            valueFont.Dispose();
+        }
+
+        private static void DrawCell(Graphics g, int x, int y, int width, int height,
+            string label, string value, bool hasValue, Font labelFont, Font valueFont,
+            Brush text, Brush faint)
+        {
+            g.DrawString(label, labelFont, faint, x, y, StringFormat.GenericTypographic);
+            g.DrawString(value, valueFont, hasValue ? text : faint, x,
+                y + labelFont.Height + 2, StringFormat.GenericTypographic);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            Invalidate();
         }
     }
 

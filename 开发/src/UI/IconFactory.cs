@@ -98,6 +98,197 @@ namespace DeviceBattery
             return Render(size, text, background, dim, digitPercent, charging, style, false, null);
         }
 
+        /// <summary>
+        /// 托盘用「电量数字 + 类别角标」：数字保持原来的完整大小，只在右下角叠一个约 5px 的
+        /// 类别小符号（鼠标/键盘/耳机/手柄）。16px 以下或未知类别直接回落成纯数字图标。
+        /// </summary>
+        public static Icon BuildDigitsWithCategory(int size, string text, Color color, bool dim,
+            int digitPercent, bool charging, string style, string font, DeviceCategory category)
+        {
+            if (!CanDrawCategoryGlyph(size, category))
+            {
+                return BuildDigits(size, text, color, dim, digitPercent, charging, style, font);
+            }
+            try
+            {
+                // 数字走和原来完全相同的管线，占满整个槽位，不再被类别图挤小。
+                Icon plain = BuildDigits(size, text, color, dim, digitPercent, charging, style, font);
+                using (Bitmap direct = new Bitmap(plain.ToBitmap()))
+                {
+                    plain.Dispose();
+                    using (Graphics graphics = Graphics.FromImage(direct))
+                    {
+                        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                        graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                        // 右下角的一小块：数字一般落在中上部，角标放在这里不会盖住笔画。
+                        // 左上角：16px 数字居中后左上角通常留有一点空隙。
+                        // 4px 的小角标，画在一块半透明底上，和数字笔画区分开。
+                        float badge = Math.Max(4f, size * 0.25f);
+                        RectangleF area = new RectangleF(0.5f, 0.5f, badge, badge);
+                        using (SolidBrush plate = new SolidBrush(Color.FromArgb(150,
+                            Theme.ContrastText(color))))
+                        using (GraphicsPath platePath = RoundedRect(area, badge * 0.3f))
+                        {
+                            graphics.FillPath(plate, platePath);
+                        }
+                        // 角标用数字色的反色画在底板上，对比清楚。
+                        DrawCategoryGlyph(graphics, size, area, category,
+                            Theme.ContrastText(color), dim);
+                    }
+                    return FromBitmap(direct);
+                }
+            }
+            catch (Exception)
+            {
+                // 类别角标是装饰：任何绘制异常都要回落到原来的纯数字图标，托盘不能变空白。
+                return BuildDigits(size, text, color, dim, digitPercent, charging, style, font);
+            }
+        }
+
+        /// <summary>
+        /// 类别图标用 Segoe Fluent Icons 字形画在左侧，占约 7px 宽、接近全高；
+        /// 数字在右侧。比 4px 剪影醒目得多，接近 BatteryHub 的任务栏显示。
+        /// </summary>
+        public static Icon BuildDigitsWithGlyph(int size, string text, Color color, bool dim,
+            int digitPercent, bool charging, string style, string font, DeviceCategory category)
+        {
+            if (!CanDrawCategoryGlyph(size, category))
+            {
+                return BuildDigits(size, text, color, dim, digitPercent, charging, style, font);
+            }
+            try
+            {
+                IconSpec spec = SpecFor(style, font);
+                using (Bitmap direct = new Bitmap(size, size, PixelFormat.Format32bppArgb))
+                {
+                    using (Graphics graphics = Graphics.FromImage(direct))
+                    {
+                        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                        graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                        graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                        graphics.Clear(Color.Transparent);
+                        // 左侧 7px 写字形，右侧留给数字。
+                        float glyphWidth = size * 0.42f;
+                        RectangleF glyphArea = new RectangleF(0f, 0f, glyphWidth, size);
+                        DrawCategoryGlyphFont(graphics, size, glyphArea, category, color, dim);
+                        DrawPlain(graphics, size, text, color, dim, digitPercent,
+                            charging && size >= 20, spec, style,
+                            new RectangleF(glyphWidth, 0f, size - glyphWidth, size));
+                    }
+                    return FromBitmap(direct);
+                }
+            }
+            catch (Exception)
+            {
+                return BuildDigits(size, text, color, dim, digitPercent, charging, style, font);
+            }
+        }
+
+        private static void DrawCategoryGlyphFont(Graphics graphics, int size, RectangleF area,
+            DeviceCategory category, Color color, bool dim)
+        {
+            string glyph = TaskbarStripStyleGlyph(category);
+            if (string.IsNullOrEmpty(glyph)) return;
+            string family = HasFamily("Segoe Fluent Icons") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
+            int fontPx = Math.Max(8, (int)Math.Round(size * 0.72f));
+            using (Font font = new Font(family, fontPx, FontStyle.Regular, GraphicsUnit.Pixel))
+            using (StringFormat format = new StringFormat(StringFormat.GenericTypographic))
+            using (SolidBrush brush = new SolidBrush(Color.FromArgb(dim ? 170 : 255, color)))
+            {
+                format.Alignment = StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                format.FormatFlags |= StringFormatFlags.NoClip;
+                graphics.DrawString(glyph, font, brush, area, format);
+            }
+        }
+
+        private static string TaskbarStripStyleGlyph(DeviceCategory category)
+        {
+            switch (category)
+            {
+                case DeviceCategory.Mouse: return "\uE962";
+                case DeviceCategory.Headset: return "\uE7F6";
+                case DeviceCategory.Keyboard: return "\uE765";
+                case DeviceCategory.Gamepad: return "\uE7FC";
+                default: return null;
+            }
+        }
+
+        /// <summary>16px 以上且类别已知时才画得清；更小槽位画两样东西只会糊成一团。</summary>
+        internal static bool CanDrawCategoryGlyph(int size, DeviceCategory category)
+        {
+            return size >= 16 && category != DeviceCategory.Unknown;
+        }
+
+        private static void DrawCategoryGlyph(Graphics graphics, int size, RectangleF area,
+            DeviceCategory category, Color color, bool dim)
+        {
+            const int factor = 4;
+            int badgePixels = Math.Max(1, (int)Math.Ceiling(area.Width));
+            using (Bitmap supersampled = new Bitmap(badgePixels * factor, badgePixels * factor, PixelFormat.Format32bppArgb))
+            {
+                using (Graphics paint = Graphics.FromImage(supersampled))
+                {
+                    paint.SmoothingMode = SmoothingMode.AntiAlias;
+                    paint.PixelOffsetMode = PixelOffsetMode.Half;
+                    paint.Clear(Color.Transparent);
+                    Color ink = Color.FromArgb(dim ? 165 : 255, color);
+                    // 4~5px 的角标里画不出鼠标/键盘的线稿。改成四种**实心剪影**：
+                    // 圆=鼠标、方=键盘、半圆=耳机、菱形=手柄。形状差异在 4px 下仍能分辨。
+                    using (SolidBrush brush = new SolidBrush(ink))
+                    {
+                        float w = badgePixels * factor;
+                        float h = badgePixels * factor;
+                        float m = w * 0.10f;
+                        RectangleF box = new RectangleF(m, m, w - m * 2f, h - m * 2f);
+                        if (category == DeviceCategory.Mouse)
+                        {
+                            // 竖椭圆 = 鼠标
+                            paint.FillEllipse(brush, box.Left + box.Width * 0.18f, box.Top,
+                                box.Width * 0.64f, box.Height);
+                        }
+                        else if (category == DeviceCategory.Keyboard)
+                        {
+                            // 扁矩形 = 键盘
+                            paint.FillRectangle(brush, box.Left, box.Top + box.Height * 0.22f,
+                                box.Width, box.Height * 0.56f);
+                        }
+                        else if (category == DeviceCategory.Headset)
+                        {
+                            // 上半圆 = 耳机头梁
+                            using (GraphicsPath arch = new GraphicsPath())
+                            {
+                                arch.AddArc(box, 180f, 180f);
+                                arch.CloseFigure();
+                                paint.FillPath(brush, arch);
+                            }
+                        }
+                        else // Gamepad
+                        {
+                            // 菱形 = 手柄
+                            using (GraphicsPath diamond = new GraphicsPath())
+                            {
+                                float cx = box.Left + box.Width / 2f;
+                                float cy = box.Top + box.Height / 2f;
+                                diamond.AddPolygon(new PointF[]
+                                {
+                                    new PointF(cx, box.Top),
+                                    new PointF(box.Right, cy),
+                                    new PointF(cx, box.Bottom),
+                                    new PointF(box.Left, cy)
+                                });
+                                paint.FillPath(brush, diamond);
+                            }
+                        }
+                    }
+                }
+                using (Bitmap small = DownscaleAlpha(supersampled, badgePixels, factor))
+                {
+                    graphics.DrawImageUnscaled(small, (int)area.Left, (int)area.Top);
+                }
+            }
+        }
+
         private static Icon Render(int size, string text, Color color, bool dim, int digitPercent,
             bool charging, string style, bool plain, string font)
         {
@@ -342,7 +533,7 @@ namespace DeviceBattery
         /// 「不显示数字」时留一个小圆点当把手，否则托盘上会是一块抓不到的透明空格。
         /// </summary>
         private static void DrawPlain(Graphics graphics, float s, string text, Color color, bool dim,
-            int digitPercent, bool bolt, IconSpec spec, string style)
+            int digitPercent, bool bolt, IconSpec spec, string style, RectangleF? content = null)
         {
             if (IsPlaceholderText(text))
             {
@@ -350,7 +541,7 @@ namespace DeviceBattery
             }
             else if (digitPercent > 0 && !string.IsNullOrEmpty(text))
             {
-                DrawPlainText(graphics, s, text, color, dim, digitPercent, bolt, spec, style);
+                DrawPlainText(graphics, s, text, color, dim, digitPercent, bolt, spec, style, content);
             }
             else if (!bolt)
             {
@@ -370,7 +561,7 @@ namespace DeviceBattery
         /// 槽位的体积感，又不会像缩放那样糊边。
         /// </summary>
         private static void DrawPlainText(Graphics graphics, float s, string text, Color color,
-            bool dim, int digitPercent, bool bolt, IconSpec spec, string style)
+            bool dim, int digitPercent, bool bolt, IconSpec spec, string style, RectangleF? content = null)
         {
             int canvas = (int)s;
             // RenderDigits 内部已经在按 2 倍画布超采样后再缩回 layerSize，所以这里给的就是最终
@@ -378,7 +569,11 @@ namespace DeviceBattery
             // 临时画布比图标大一圈：字号试探时溢出部分不被裁掉，量的才是真实字形。
             int layerSize = canvas + 8;
             float slotScale = s / 16f;
-            float maxWidth = s * (bolt ? 0.58f : 1f);
+            // 类别图标模式：数字只画在右侧区域里，宽度与中心都按该区域算。
+            float contentLeft = content.HasValue ? content.Value.Left : 0f;
+            float contentWidth = content.HasValue ? content.Value.Width : s;
+            float contentCenterX = contentLeft + contentWidth / 2f;
+            float maxWidth = contentWidth * (bolt ? 0.58f : (content.HasValue ? 0.94f : 1f));
 
             string digitFamily;
             FontStyle digitWeight;
@@ -429,7 +624,7 @@ namespace DeviceBattery
 
                 using (first)
                 {
-                    int directX = (int)Math.Round((canvas - firstBox.Width) / 2f) - firstBox.X;
+                    int directX = (int)Math.Round(contentCenterX - firstBox.Width / 2f) - firstBox.X;
                     int directY = (int)Math.Round((canvas - firstBox.Height) / 2f) - firstBox.Y;
                     graphics.DrawImageUnscaled(first, directX, directY);
                 }
@@ -465,7 +660,7 @@ namespace DeviceBattery
             }
             using (chosen)
             {
-                int offsetX = (int)Math.Round((canvas - chosenBox.Width) / 2f) - chosenBox.X;
+                int offsetX = (int)Math.Round(contentCenterX - chosenBox.Width / 2f) - chosenBox.X;
                 int offsetY = (int)Math.Round((canvas - chosenBox.Height) / 2f) - chosenBox.Y;
                 graphics.DrawImageUnscaled(chosen, offsetX, offsetY);
             }

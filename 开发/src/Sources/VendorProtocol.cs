@@ -22,6 +22,16 @@ namespace DeviceBattery
             return 0;
         }
 
+        /// <summary>
+        /// 这个协议两次查询之间的最小间隔（秒）。0 表示完全跟随用户在设置里选的全局间隔。
+        /// 有的接收器问得太勤会出问题：雷蛇 BlackShark V3 会被问到重启，MCHOSE/Evision
+        /// 键盘接收器要留时间让键盘休眠，所以它们各自设一个下限。
+        /// </summary>
+        public virtual int MinQuerySeconds
+        {
+            get { return 0; }
+        }
+
         public abstract string NameFor(HidDeviceInfo info);
 
         public abstract DeviceCategory CategoryFor(HidDeviceInfo info);
@@ -37,6 +47,18 @@ namespace DeviceBattery
 
         /// <summary>打开集合、发请求、解析回包。失败时返回带原因的空读数。</summary>
         public abstract BatteryReading Read(HidDeviceInfo info, int timeoutMs);
+
+        /// <summary>
+        /// 请求和回包分在不同集合上时用的重载（ZOWIE 发在 FF03、收在 FF04，
+        /// Areson 发在 feature 集合、收在 input 集合）。列表按 Rank 排好序，
+        /// 第 0 项是首选。默认回落到单集合版本，原有协议一个字都不用改。
+        /// </summary>
+        public virtual BatteryReading Read(List<HidDeviceInfo> interfaces, int timeoutMs)
+        {
+            return interfaces == null || interfaces.Count == 0
+                ? Failure("设备集合已移除")
+                : Read(interfaces[0], timeoutMs);
+        }
 
         protected static BatteryReading Success(int level, bool? charging, string raw)
         {
@@ -101,7 +123,11 @@ namespace DeviceBattery
     internal sealed class VendorDevice
     {
         public VendorProtocol Protocol;
+        // Info 始终是 Interfaces[0]（Rank 最小的一个），稳定 ID 一直按它算：
+        // 这样新增「多集合读取」不会让老设备换 ID、丢掉重命名和低电阈值。
         public HidDeviceInfo Info;
+        // 同一台设备的全部集合。请求在一个集合、回包在另一个集合的协议要用。
+        public List<HidDeviceInfo> Interfaces = new List<HidDeviceInfo>();
         public string Name;
         public DeviceCategory Category;
 
@@ -128,7 +154,26 @@ namespace DeviceBattery
             new PulsarProtocol(),
             new HyperXProtocol(),
             new AsusProtocol(),
-            new JblProtocol()
+            new JblProtocol(),
+            // 新增协议一律追加在末尾，不改前面 10 个的认领顺序：
+            // 万一新旧协议认领了同一个接口，先注册的仍然优先，老设备行为不变。
+            new EvisionProtocol(),
+            new AulaKeyboardProtocol(),
+            new MchoseGlwProtocol(),
+            new SonixKeyboardProtocol(),
+            new CorsairVoidProtocol(),
+            new CorsairBragiProtocol(),
+            new HyperXFlightProtocol(),
+            new HyperXStingerProtocol(),
+            new HyperXAlphaProtocol(),
+            new RazerBlackSharkV3Protocol(),
+            new RazerBlackSharkV2ProProtocol(),
+            new RazerBarracudaProtocol(),
+            new LogitechG533Protocol(),
+            new AulaMouseProtocol(),
+            new Endgame4KProtocol(),
+            new ZowieProtocol(),
+            new AresonProtocol()
         };
 
         public List<VendorDevice> Find(List<HidDeviceInfo> interfaces)
@@ -183,6 +228,7 @@ namespace DeviceBattery
                 VendorDevice device = new VendorDevice();
                 device.Protocol = protocol;
                 device.Info = pair.Value[0];
+                device.Interfaces = pair.Value;
                 device.Name = protocol.NameFor(pair.Value[0]);
                 device.Category = protocol.CategoryFor(pair.Value[0]);
                 found.Add(device);
@@ -199,7 +245,7 @@ namespace DeviceBattery
             }
             try
             {
-                return device.Protocol.Read(device.Info, timeoutMs);
+                return device.Protocol.Read(device.Interfaces, timeoutMs);
             }
             catch (Exception ex)
             {

@@ -10,9 +10,11 @@ using DeviceBattery;
 
 internal static class TestHarness
 {
-    // AGENTS.md 要求自测 301 通过 / 0 失败。只判 _failed 的话，删掉一条测试也会"通过"，
+    // AGENTS.md 要求自测零失败。只判 _failed 的话，删掉一条测试也会"通过"，
     // 所以把期望条数也钉死：新增/删除断言后必须同步改这里。
-    private const int ExpectedChecks = 305;
+    // 305（基线）+ 23（键盘）+ 38（耳机）+ 23（鼠标）+ 10（手柄）+ 7（AirPods）
+    //   + 19（历史统计）+ 5（新增设置项）+ 31（任务栏显示含托盘色）+ 8（托盘类别图标）= 469。
+    private const int ExpectedChecks = 469;
 
     private static int _passed;
     private static int _failed;
@@ -1243,6 +1245,15 @@ internal static class TestHarness
         clone.LastReading.Percent = 10;
         Check("克隆不共享读数", mouse.PercentOrZero == 45, mouse.PercentOrZero.ToString());
 
+        CheckKeyboardProtocols();
+        CheckHeadsetProtocols();
+        CheckMouseProtocols();
+        CheckGamepadSupport();
+        CheckAirPodsBroadcast();
+        CheckBatteryStats();
+        CheckNewSettingsRoundTrip();
+        CheckTaskbarDisplay();
+
         Console.WriteLine();
         Console.WriteLine(string.Format("结果：{0} 通过，{1} 失败（期望 {2} 条）", _passed, _failed, ExpectedChecks));
         if (_failed > 0)
@@ -1256,6 +1267,733 @@ internal static class TestHarness
             return 1;
         }
         return 0;
+    }
+
+    /// <summary>2.4G 键盘协议：全部用公开资料里的实际回包帧，解码是纯函数，不需要硬件。</summary>
+    private static void CheckKeyboardProtocols()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 2.4G 键盘协议帧解析 ===");
+
+        // ---- Evision（VGN / VXE / ATK）----
+        string name;
+        bool vgn;
+        Check("Evision 型号 VGN V98 PRO 2.4G Dongle",
+            EvisionProtocol.TryModel("VGN V98 PRO 2.4G Dongle ", out name, out vgn) &&
+            name == "VGN V98 PRO" && vgn, name + "/" + vgn);
+        Check("Evision 型号 ATK V75X 非 VGN 变体",
+            EvisionProtocol.TryModel("ATK V75X", out name, out vgn) && name == "ATK V75X" && !vgn,
+            name + "/" + vgn);
+        Check("Evision 未知型号不认领",
+            !EvisionProtocol.TryModel("Some Other Dongle", out name, out vgn), "unknown");
+        byte[] evReq = EvisionProtocol.BuildRequest(0x0102, true);
+        Check("Evision 请求帧头 04 02 01 1A 06",
+            evReq[0] == 0x04 && evReq[1] == 0x02 && evReq[2] == 0x01 &&
+            evReq[3] == 0x1A && evReq[4] == 0x06 && evReq.Length == 32, evReq.Length.ToString());
+        byte[] evReply = new byte[64];
+        evReply[0] = 0x04; evReply[1] = 0x05; evReply[2] = 0x00; evReply[3] = 0x1A;
+        evReply[4] = 0x06; evReply[8] = 93; evReply[9] = 0;
+        int lvl; bool chg;
+        Check("Evision 回包 93% 未充电",
+            EvisionProtocol.TryParse(evReply, 5, out lvl, out chg) && lvl == 93 && !chg, lvl + "/" + chg);
+        evReply[9] = 2;
+        Check("Evision 回包充电状态 2 也算充电",
+            EvisionProtocol.TryParse(evReply, 5, out lvl, out chg) && lvl == 93 && chg, lvl + "/" + chg);
+        Check("Evision 序号不匹配不认",
+            !EvisionProtocol.TryParse(evReply, 6, out lvl, out chg), "seq 6");
+        evReply[8] = 101;
+        Check("Evision 越界电量不认",
+            EvisionProtocol.TryParse(evReply, 5, out lvl, out chg) == false, "101%");
+
+        // ---- AULA / MCHOSE BY 接收器 ----
+        byte[] aulaReq = AulaKeyboardProtocol.BuildRequest(0);
+        byte aulaSum = 0;
+        for (int i = 0; i < 19; i++) { aulaSum = unchecked((byte)(aulaSum + aulaReq[i])); }
+        Check("AULA 请求帧校验和正确", aulaReq[19] == aulaSum, aulaReq[19].ToString("X2"));
+        byte[] aulaReply = new byte[20];
+        aulaReply[0] = 0x13; aulaReply[1] = 0x4A; aulaReply[5] = 76; aulaReply[6] = 0x01;
+        aulaSum = 0;
+        for (int i = 0; i < 19; i++) { aulaSum = unchecked((byte)(aulaSum + aulaReply[i])); }
+        aulaReply[19] = aulaSum;
+        Check("AULA 回包 76% 未充电",
+            AulaKeyboardProtocol.TryParse(aulaReply, out lvl, out chg) && lvl == 76 && !chg, lvl + "/" + chg);
+        aulaReply[1] = 0xCA; aulaReply[5] = 54; aulaReply[6] = 0x10;
+        aulaSum = 0;
+        for (int i = 0; i < 19; i++) { aulaSum = unchecked((byte)(aulaSum + aulaReply[i])); }
+        aulaReply[19] = aulaSum;
+        Check("AULA 回包高半字节 1 为充电",
+            AulaKeyboardProtocol.TryParse(aulaReply, out lvl, out chg) && lvl == 54 && chg, lvl + "/" + chg);
+        Check("AULA 请求回显被跳过",
+            !AulaKeyboardProtocol.TryParse(AulaKeyboardProtocol.BuildRequest(0), out lvl, out chg), "echo");
+        byte[] mchoseReply = new byte[20];
+        mchoseReply[0] = 0x13; mchoseReply[1] = 0x4A; mchoseReply[2] = 1;
+        mchoseReply[3] = 0; mchoseReply[5] = 90; mchoseReply[6] = 0; mchoseReply[19] = 0;
+        Check("MCHOSE 单包帧校验位 0 也认",
+            AulaKeyboardProtocol.TryParse(mchoseReply, out lvl, out chg) && lvl == 90 && !chg, lvl + "/" + chg);
+        aulaReply[5] = 0;
+        aulaSum = 0;
+        for (int i = 0; i < 19; i++) { aulaSum = unchecked((byte)(aulaSum + aulaReply[i])); }
+        aulaReply[19] = aulaSum;
+        Check("AULA 0% 电量不认", !AulaKeyboardProtocol.TryParse(aulaReply, out lvl, out chg), "0%");
+
+        // ---- MCHOSE GLW ----
+        byte[] glwReq = MchoseGlwProtocol.BuildRequest();
+        Check("GLW 请求帧 00 55 05 00 38 38",
+            glwReq[0] == 0 && glwReq[1] == 0x55 && glwReq[2] == 0x05 &&
+            glwReq[3] == 0 && glwReq[4] == 56 && glwReq[5] == 56, "req");
+        byte[] glwReply = new byte[64];
+        glwReply[0] = 0xAA; glwReply[1] = 0x05; glwReply[4] = 56;
+        glwReply[8 + 3] = 0x12; glwReply[8 + 32] = 85;
+        byte glwSum = 0;
+        for (int i = 4; i < 8; i++) { glwSum = unchecked((byte)(glwSum + glwReply[i])); }
+        for (int i = 0; i < 56; i++) { glwSum = unchecked((byte)(glwSum + glwReply[8 + i])); }
+        glwReply[3] = glwSum;
+        Check("GLW 回包 85% 未充电",
+            MchoseGlwProtocol.TryParse(glwReply, out lvl, out chg) && lvl == 85 && !chg, lvl + "/" + chg);
+        glwReply[8 + 32] = (byte)(0x80 | 60);
+        glwSum = 0;
+        for (int i = 4; i < 8; i++) { glwSum = unchecked((byte)(glwSum + glwReply[i])); }
+        for (int i = 0; i < 56; i++) { glwSum = unchecked((byte)(glwSum + glwReply[8 + i])); }
+        glwReply[3] = glwSum;
+        Check("GLW 回包最高位为充电",
+            MchoseGlwProtocol.TryParse(glwReply, out lvl, out chg) && lvl == 60 && chg, lvl + "/" + chg);
+        glwReply[3] ^= 1;
+        Check("GLW 校验和错误不认", !MchoseGlwProtocol.TryParse(glwReply, out lvl, out chg), "bad sum");
+        Check("GLW 空帧不认",
+            !MchoseGlwProtocol.TryParse(new byte[64], out lvl, out chg), "empty");
+
+        // ---- SONiX ----
+        byte[] sonixReq = SonixKeyboardProtocol.BuildRequest();
+        Check("SONiX 请求帧 33 字节、20 01 开头、校验 0x21",
+            sonixReq.Length == 33 && sonixReq[1] == 0x20 && sonixReq[2] == 0x01 && sonixReq[32] == 0x21,
+            sonixReq[32].ToString("X2"));
+        byte[] sonixReply = new byte[32];
+        sonixReply[0] = 0x20; sonixReply[1] = 0x01; sonixReply[2] = 0x00; sonixReply[3] = 87;
+        int sonixLevel;
+        Check("SONiX 回包 87%",
+            SonixKeyboardProtocol.TryParse(sonixReply, out sonixLevel) && sonixLevel == 87, sonixLevel.ToString());
+        sonixReply[3] = 0;
+        Check("SONiX 0% 表示关机（解析仍成功）",
+            SonixKeyboardProtocol.TryParse(sonixReply, out sonixLevel) && sonixLevel == 0, sonixLevel.ToString());
+        sonixReply[1] = 0x02;
+        Check("SONiX 命令不匹配不认",
+            !SonixKeyboardProtocol.TryParse(sonixReply, out sonixLevel), "cmd 02");
+    }
+
+    /// <summary>无线耳机协议：全部用公开资料里的实际回包帧做解码断言。</summary>
+    private static void CheckHeadsetProtocols()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 无线耳机协议帧解析 ===");
+        int level; bool charging, full, linked;
+        int[] raw = new int[2];
+
+        // ---- Corsair Void ----
+        byte[] c = new byte[] { 0x64, 0x00, 60, 177, 1 };
+        Check("Corsair Void 60% 未充电",
+            CorsairVoidProtocol.TryParse(c, out level, out charging, out full, out linked) &&
+            linked && level == 60 && !charging, level + "/" + charging);
+        c = new byte[] { 0x64, 0x00, 60, 51, 1 };
+        Check("Corsair Void 断连状态 51",
+            CorsairVoidProtocol.TryParse(c, out level, out charging, out full, out linked) && !linked, "51");
+        c = new byte[] { 0x64, 0x00, 88, 177, 5 };
+        Check("Corsair Void 状态 5 充电",
+            CorsairVoidProtocol.TryParse(c, out level, out charging, out full, out linked) && charging && !full, "5");
+        c = new byte[] { 0x64, 0x00, 100, 177, 4 };
+        Check("Corsair Void 状态 4 充满",
+            CorsairVoidProtocol.TryParse(c, out level, out charging, out full, out linked) && full, "4");
+        c = new byte[] { 0x66, 0x01, 0x02, 0x03, 0x04 };
+        Check("Corsair Void 非状态报告不认",
+            !CorsairVoidProtocol.TryParse(c, out level, out charging, out full, out linked), "0x66");
+
+        // ---- Corsair Bragi ----
+        byte[] bragiReq = CorsairBragiProtocol.BuildRequest(0x0F);
+        Check("Bragi 请求帧 02 09 02 0F",
+            bragiReq[0] == 0x02 && bragiReq[1] == 0x09 && bragiReq[2] == 0x02 && bragiReq[3] == 0x0F, "req");
+        byte[] bragi = new byte[64];
+        bragi[0] = 0x02; bragi[1] = 0x01; bragi[2] = 0x02; bragi[3] = 0;
+        bragi[4] = 107; bragi[5] = 3; // 875 = 0x36B
+        Check("Bragi 回包千分比 875",
+            CorsairBragiProtocol.TryParse(bragi, 0x01, out raw[0]) && raw[0] == 875, raw[0].ToString());
+        bragi[3] = 5;
+        Check("Bragi 错误状态 value=-1",
+            CorsairBragiProtocol.TryParse(bragi, 0x01, out raw[0]) && raw[0] == -1, raw[0].ToString());
+        bragi[3] = 0; bragi[1] = 0x00;
+        Check("Bragi 接收器自己的回包不认",
+            !CorsairBragiProtocol.TryParse(bragi, 0x01, out raw[0]), "src 0");
+        int pct;
+        Check("Bragi 875 -> 88%",
+            CorsairBragiProtocol.TryPercent(875, out pct) && pct == 88, pct.ToString());
+        Check("Bragi 1000 -> 100%",
+            CorsairBragiProtocol.TryPercent(1000, out pct) && pct == 100, pct.ToString());
+        Check("Bragi 1001 越界不认", !CorsairBragiProtocol.TryPercent(1001, out pct), "1001");
+
+        // ---- HyperX Flight ----
+        byte[] flight = new byte[20];
+        flight[0] = 0x21; flight[1] = 0xFF; flight[2] = 0x05; flight[3] = 0x0E; flight[4] = 0xD8;
+        int mv; bool charging2, linked2;
+        Check("Flight 3800mV 解析",
+            HyperXFlightProtocol.TryParse(flight, out mv, out charging2, out linked2) &&
+            linked2 && mv == 3800 && !charging2, mv.ToString());
+        Check("Flight 4000mV -> 100%", HyperXFlightProtocol.VoltagePercent(4000) == 100, "4000");
+        Check("Flight 3600mV -> 4%", HyperXFlightProtocol.VoltagePercent(3600) == 4, "3600");
+        flight[3] = 0x10; flight[4] = 0x20; // 4128mV
+        Check("Flight 超过 0x100BmV 为充电",
+            HyperXFlightProtocol.TryParse(flight, out mv, out charging2, out linked2) && charging2, "4128");
+        flight[3] = 0; flight[4] = 0;
+        Check("Flight 0mV 表示没连上",
+            HyperXFlightProtocol.TryParse(flight, out mv, out charging2, out linked2) && !linked2, "0mV");
+
+        // ---- HyperX Stinger ----
+        byte[] stinger = new byte[64];
+        stinger[0] = 0xFF; stinger[9] = 0x03;
+        stinger[11] = 0x41; stinger[12] = 0x0F; // 3905mV little endian
+        Check("Stinger 3905mV 放电 -> 70%",
+            HyperXStingerProtocol.TryParse(stinger, out level, out charging, out full) &&
+            level == 70 && !charging, level + "/" + charging);
+        stinger[9] = 0x06;
+        Check("Stinger 状态 06 充满 100%",
+            HyperXStingerProtocol.TryParse(stinger, out level, out charging, out full) && full && level == 100, "6");
+        stinger[9] = 0x05; stinger[11] = 0xA0; stinger[12] = 0x0F; // 4000mV
+        Check("Stinger 状态 05 充电 -> 70%",
+            HyperXStingerProtocol.TryParse(stinger, out level, out charging, out full) && charging && level == 70, level + "/" + charging);
+        stinger[9] = 0x01;
+        Check("Stinger 未知状态不认", !HyperXStingerProtocol.TryParse(stinger, out level, out charging, out full), "1");
+
+        // ---- HyperX Alpha ----
+        byte[] alpha = new byte[31];
+        alpha[0] = 0x21; alpha[1] = 0xBB; alpha[2] = 0x0B; alpha[3] = 77;
+        int av;
+        Check("Alpha 命令 0B 电量 77%",
+            HyperXAlphaProtocol.TryParse(alpha, 0x0B, out av) && av == 77, av.ToString());
+        alpha[2] = 0x0C;
+        Check("Alpha 命令 0C 请求不匹配不认",
+            !HyperXAlphaProtocol.TryParse(alpha, 0x0B, out av), "0C");
+
+        // ---- Razer BlackShark V3 ----
+        byte[] bsReq = RazerBlackSharkV3Protocol.BuildRequest();
+        Check("BlackShark V3 请求校验位正确",
+            bsReq[10] == 0x21 && bsReq[62] == HeadsetMath.Xor(bsReq, 0, 62), "req");
+        byte[] bs = new byte[64];
+        bs[0] = 0x02; bs[10] = 0x21; bs[11] = 0x01; bs[12] = 0x01; bs[13] = 80;
+        RazerBlackSharkV3Protocol.Kind kind3 = RazerBlackSharkV3Protocol.TryParse(bs, out raw[0]);
+        Check("BlackShark V3 回包 80%",
+            kind3 == RazerBlackSharkV3Protocol.Kind.Level && raw[0] == 80, raw[0].ToString());
+        bs[10] = 0x2A; bs[13] = 1;
+        kind3 = RazerBlackSharkV3Protocol.TryParse(bs, out raw[0]);
+        Check("BlackShark V3 充电推送",
+            kind3 == RazerBlackSharkV3Protocol.Kind.Charging && raw[0] == 1, raw[0].ToString());
+        bs[10] = 0x21; bs[13] = 0xFF;
+        Check("BlackShark V3 FF 表示未知不认",
+            RazerBlackSharkV3Protocol.TryParse(bs, out raw[0]) == RazerBlackSharkV3Protocol.Kind.None, "FF");
+
+        // ---- Razer BlackShark V2 Pro ----
+        byte[] v2q = RazerBlackSharkV2ProProtocol.BuildRequest(0x21);
+        Check("BlackShark V2 Pro 查询帧头 02 80 08",
+            v2q[0] == 0x02 && v2q[1] == 0x80 && v2q[2] == 0x08 && v2q[10] == 0x21, "req");
+        byte[] v2 = new byte[64];
+        v2[0] = 0x02; v2[12] = 0x21; v2[13] = 0x01; v2[15] = 65;
+        Check("BlackShark V2 Pro 回包 65%",
+            RazerBlackSharkV2ProProtocol.TryParse(v2, 0x21, out raw[0]) && raw[0] == 65, raw[0].ToString());
+        v2[13] = 0;
+        Check("BlackShark V2 Pro 非 ACK 不认",
+            !RazerBlackSharkV2ProProtocol.TryParse(v2, 0x21, out raw[0]), "ACK=0");
+
+        // ---- Razer Barracuda ----
+        byte[] baReq = RazerBarracudaProtocol.BuildRequest(0x21);
+        Check("Barracuda 请求校验位正确",
+            baReq[10] == 0x21 && baReq[62] == HeadsetMath.Xor(baReq, 0, 62), "req");
+        byte[] ba = new byte[64];
+        byte[] baHead = new byte[] { 0x02, 0x02, 0x60, 0, 0, 0, 0x05, 0, 0x80, 0x80, 0x21, 0x01, 0x01 };
+        Array.Copy(baHead, ba, baHead.Length);
+        ba[13] = 72;
+        ba[62] = HeadsetMath.Xor(ba, 1, 61);
+        Check("Barracuda 回包 72%",
+            RazerBarracudaProtocol.TryParse(ba, 0x21, out raw[0]) && raw[0] == 72, raw[0].ToString());
+        ba[62] ^= 1;
+        Check("Barracuda 校验错误不认",
+            !RazerBarracudaProtocol.TryParse(ba, 0x21, out raw[0]), "bad xor");
+
+        // ---- Logitech G533 ----
+        byte[] g533 = new byte[20];
+        g533[0] = 0x11; g533[1] = 0xFF; g533[2] = 0x07; g533[3] = 0x01;
+        g533[4] = 0x0F; g533[5] = 0xA0; // 4000mV
+        int gmv; bool gchg;
+        Check("G533 回包 4000mV",
+            LogitechG533Protocol.TryParse(g533, out gmv, out gchg) == LogitechG533Protocol.Kind.Battery &&
+            gmv == 4000 && !gchg, gmv.ToString());
+        Check("G533 4250mV -> 100%", LogitechG533Protocol.VoltagePercent(4250) == 100, "4250");
+        Check("G533 3850mV -> 50%", LogitechG533Protocol.VoltagePercent(3850) == 50, "3850");
+        Check("G533 3330mV -> 0%", LogitechG533Protocol.VoltagePercent(3330) == 0, "3330");
+        g533[2] = 0xFF; g533[3] = 0x07;
+        Check("G533 FF 07 为离线",
+            LogitechG533Protocol.TryParse(g533, out gmv, out gchg) == LogitechG533Protocol.Kind.Offline, "offline");
+    }
+
+    /// <summary>2.4G 鼠标协议：AULA 8K / Endgame 4K / ZOWIE / Areson 的录帧断言。</summary>
+    private static void CheckMouseProtocols()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 2.4G 鼠标协议帧解析 ===");
+        int level; bool charging; int value;
+
+        // ---- AULA 8K ----
+        byte[] aulaFrame = new byte[64];
+        aulaFrame[0] = 0x04; aulaFrame[3] = 0x1A; aulaFrame[8] = 0x59; aulaFrame[9] = 0;
+        Check("AULA 8K 回包 89% 未充电",
+            AulaMouseProtocol.Decode(aulaFrame, out value) == AulaMouseProtocol.FrameKind.Battery &&
+            (value & 0xFF) == 89 && (value & 0x100) == 0, value.ToString());
+        aulaFrame[8] = 0x63; aulaFrame[9] = 1;
+        Check("AULA 8K 状态 1 充电",
+            AulaMouseProtocol.Decode(aulaFrame, out value) == AulaMouseProtocol.FrameKind.Battery &&
+            (value & 0xFF) == 99 && (value & 0x100) != 0, value.ToString());
+        aulaFrame[8] = 0x64; aulaFrame[9] = 2;
+        Check("AULA 8K 状态 2 充满",
+            AulaMouseProtocol.Decode(aulaFrame, out value) == AulaMouseProtocol.FrameKind.Battery &&
+            (value & 0xFF) == 100 && (value & 0x100) != 0, value.ToString());
+        aulaFrame[8] = 0; aulaFrame[9] = 0;
+        Check("AULA 8K 0% 表示暂无读数",
+            AulaMouseProtocol.Decode(aulaFrame, out value) == AulaMouseProtocol.FrameKind.Battery && value == 0,
+            value.ToString());
+        byte[] aulaLink = new byte[64];
+        aulaLink[0] = 0x04; aulaLink[1] = 0xAA; aulaLink[3] = 0xAA; aulaLink[8] = 0xFF;
+        Check("AULA 8K 链路推送 FF=在线",
+            AulaMouseProtocol.Decode(aulaLink, out value) == AulaMouseProtocol.FrameKind.Link && value == 1,
+            value.ToString());
+
+        // ---- Endgame Gear 4K ----
+        byte[] egReq = Endgame4KProtocol.BuildRequest(0xB4);
+        Check("Endgame 请求帧 A1 B4 00",
+            egReq[0] == 0xA1 && egReq[1] == 0xB4 && egReq[2] == 0, "req");
+        byte[] eg = new byte[64];
+        eg[0] = 0xA1; eg[1] = 0x01; eg[16] = 73;
+        Check("Endgame 回包 73%",
+            Endgame4KProtocol.ParseBattery(eg, out level) == Endgame4KProtocol.Battery.Level && level == 73,
+            level.ToString());
+        eg[1] = 0x08;
+        Check("Endgame 状态 08 休眠",
+            Endgame4KProtocol.ParseBattery(eg, out level) == Endgame4KProtocol.Battery.Asleep, "08");
+        eg[1] = 0x03;
+        Check("Endgame 状态 03 忙不认",
+            Endgame4KProtocol.ParseBattery(eg, out level) == Endgame4KProtocol.Battery.None, "03");
+        eg[1] = 0x01; eg[16] = 0x67; eg[17] = 0x33; eg[18] = 0x82; eg[19] = 0x19;
+        int mousePid;
+        Check("Endgame 信息帧 PID 0x1982",
+            Endgame4KProtocol.ParseInfo(eg, out mousePid) && mousePid == 0x1982,
+            mousePid.ToString("X4"));
+
+        // ---- ZOWIE ----
+        byte[] zReq = ZowieProtocol.BuildRequest();
+        Check("ZOWIE 请求帧 08 B4 15",
+            zReq[0] == 0x08 && zReq[1] == 0xB4 && zReq[2] == 0x15, "req");
+        byte[] z = new byte[16];
+        z[0] = 0x09; z[1] = 0x01; z[2] = 0x86; z[4] = 0xC8;
+        Check("ZOWIE 回包 3900mV", ZowieProtocol.ParseVoltage(z) == 3900, z[1] + "/" + z[2]);
+        z[1] = 0; z[2] = 0;
+        Check("ZOWIE 0mV 表示没连上", ZowieProtocol.ParseVoltage(z) == 0, "0mV");
+        z[0] = 0x08;
+        Check("ZOWIE 非回报报告号不认", ZowieProtocol.ParseVoltage(z) < 0, "report 08");
+        Check("ZOWIE 3890mV -> 50% 档位",
+            ZowieProtocol.VoltagePercent(3890) == 50, ZowieProtocol.VoltagePercent(3890).ToString());
+        Check("ZOWIE 3680mV -> 10% 档位",
+            ZowieProtocol.VoltagePercent(3680) == 10, ZowieProtocol.VoltagePercent(3680).ToString());
+
+        // ---- Areson / Redragon ----
+        byte[] arReq = AresonProtocol.BuildRequest();
+        Check("Areson 请求帧 08 04 ... 49",
+            arReq[0] == 0x08 && arReq[1] == 0x04 && arReq[16] == 0x49, arReq[16].ToString("X2"));
+        byte[] ar = new byte[17];
+        byte[] arHead = new byte[] { 0x09, 0x04, 0x00, 0x00, 0x00, 0x02, 0x08, 0x00 };
+        Array.Copy(arHead, ar, arHead.Length);
+        ar[16] = 0x3E; // 整帧和为 0x55
+        Check("Areson 回包 80% 未充电",
+            AresonProtocol.TryParse(ar, out level, out charging) && level == 80 && !charging,
+            level + "/" + charging);
+        byte[] ar2 = new byte[17];
+        Array.Copy(arHead, ar2, arHead.Length);
+        ar2[6] = 5; ar2[7] = 1;
+        int sum = 0;
+        for (int i = 0; i < 16; i++) { sum += ar2[i]; }
+        ar2[16] = (byte)((0x55 - sum) & 0xFF);
+        Check("Areson 档位 5=50% 且充电",
+            AresonProtocol.TryParse(ar2, out level, out charging) && level == 50 && charging,
+            level + "/" + charging);
+        ar2[6] = 11;
+        sum = 0;
+        for (int i = 0; i < 16; i++) { sum += ar2[i]; }
+        ar2[16] = (byte)((0x55 - sum) & 0xFF);
+        Check("Areson 档位 11 越界不认", !AresonProtocol.TryParse(ar2, out level, out charging), "11");
+        ar[16] ^= 1;
+        Check("Areson 校验和错误不认", !AresonProtocol.TryParse(ar, out level, out charging), "bad sum");
+
+        // ---- CompX 扩展型号（同一 Pulsar 解码器）----
+        byte[] compReq = PulsarProtocol.BuildRequest();
+        Check("CompX 请求帧 08 04 ... 校验",
+            compReq[0] == 0x08 && compReq[1] == 0x04 &&
+            compReq[16] == PulsarProtocol.Checksum(compReq, 16), "req");
+        Check("CompX 校验 85 - 前16字节和", PulsarProtocol.Checksum(compReq, 16) == 0x49, "0x49");
+    }
+
+    /// <summary>手柄：Xbox 粗档位换算与 DualShock/DualSense 输入报告解码。</summary>
+    private static void CheckGamepadSupport()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 手柄电量解析 ===");
+        int pct; bool chg;
+
+        // XInput 粗档位
+        Check("XInput 档位 0 = 0%", GamepadBatterySource.TryCoarseLevel(0, out pct) && pct == 0, pct.ToString());
+        Check("XInput 档位 1 = 25%", GamepadBatterySource.TryCoarseLevel(1, out pct) && pct == 25, pct.ToString());
+        Check("XInput 档位 2 = 50%", GamepadBatterySource.TryCoarseLevel(2, out pct) && pct == 50, pct.ToString());
+        Check("XInput 档位 3 = 100%", GamepadBatterySource.TryCoarseLevel(3, out pct) && pct == 100, pct.ToString());
+        Check("XInput 0xFF 未知不认", !GamepadBatterySource.TryCoarseLevel(0xFF, out pct), "0xFF");
+
+        // DS4 USB report 01 byte30 = 0x05：档位 5 未插线 -> 55%
+        byte[] ds4 = new byte[64];
+        ds4[0] = 0x01; ds4[30] = 0x05;
+        Check("DS4 USB 0x05 -> 55% 未充电",
+            GamepadBatterySource.DecodePlayStation(0x05C4, false, ds4, out pct, out chg) ==
+                GamepadBatterySource.PlayStationReport.Battery && pct == 55 && !chg, pct + "/" + chg);
+        ds4[30] = 0x1A; // bit4=线缆、档位 10 -> 100%
+        Check("DS4 USB 有线满电",
+            GamepadBatterySource.DecodePlayStation(0x05C4, false, ds4, out pct, out chg) ==
+                GamepadBatterySource.PlayStationReport.Battery && pct == 100 && chg, pct + "/" + chg);
+
+        // DualSense USB report 01 byte53 = 0x43：档位 3 -> 35%，状态 4（未充电）
+        byte[] ds5 = new byte[64];
+        ds5[0] = 0x01; ds5[53] = 0x43;
+        Check("DualSense USB 0x43 -> 35%",
+            GamepadBatterySource.DecodePlayStation(0x0CE6, false, ds5, out pct, out chg) ==
+                GamepadBatterySource.PlayStationReport.Battery && pct == 35 && !chg, pct + "/" + chg);
+        ds5[53] = 0x21; // 状态 2 且满电
+        Check("DualSense 状态 2 满电",
+            GamepadBatterySource.DecodePlayStation(0x0CE6, false, ds5, out pct, out chg) ==
+                GamepadBatterySource.PlayStationReport.Battery && pct == 100 && chg, pct + "/" + chg);
+        Check("索尼 PID 识别", GamepadBatterySource.IsPlayStationPid(0x0CE6) &&
+            GamepadBatterySource.IsPlayStationPid(0x09CC) && !GamepadBatterySource.IsPlayStationPid(0x045E), "pids");
+    }
+
+    /// <summary>苹果耳机 BLE 邻近配对广播：只解析不发送，用公开资料里的真实帧。</summary>
+    private static void CheckAirPodsBroadcast()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== AirPods BLE 广播解析 ===");
+        AppleBleBatterySource.Advert advert;
+
+        // AirPods Pro 2：左耳广播(status 0x20)，左 90% 右 80% 盒 50% 且盒充电。
+        byte[] msg = new byte[27];
+        msg[0] = 0x07; msg[1] = 0x19; msg[2] = 0x01;
+        msg[3] = 0x14; msg[4] = 0x20; msg[5] = 0x20; msg[6] = 0x89; msg[7] = 0x45;
+        Check("AirPods Pro2 左90 右80 盒50",
+            AppleBleBatterySource.TryParseProximity(msg, out advert) &&
+            advert.Left == 90 && advert.Right == 80 && advert.Case == 50 && advert.CaseCharging,
+            advert == null ? "null" : advert.Left + "/" + advert.Right + "/" + advert.Case);
+
+        // 右耳广播、另一侧未知(0xF)：左 -1 右 70%、盒未知。
+        msg[5] = 0x00; msg[6] = 0xF7; msg[7] = 0x0F;
+        Check("AirPods 右耳70 另一侧未知",
+            AppleBleBatterySource.TryParseProximity(msg, out advert) &&
+            advert.Left == -1 && advert.Right == 70 && advert.Case == -1,
+            advert == null ? "null" : advert.Left + "/" + advert.Right);
+
+        // AirPods Max：单电池型号 0x200A，低半字节 6=60%，充电位 0。
+        msg[3] = 0x0A; msg[4] = 0x20; msg[5] = 0x00; msg[6] = 0x06; msg[7] = 0x90;
+        Check("AirPods Max 单电池 60% 充电",
+            AppleBleBatterySource.TryParseProximity(msg, out advert) &&
+            advert.Left == 60 && advert.LeftCharging,
+            advert == null ? "null" : advert.Left.ToString());
+
+        // 非邻近配对消息 / 非音频型号应拒绝。
+        msg[0] = 0x10;
+        Check("非 0x07 消息不认", !AppleBleBatterySource.TryParseProximity(msg, out advert), "type 0x10");
+        msg[0] = 0x07; msg[3] = 0x34; msg[4] = 0x12;
+        Check("非 0x20xx 型号不认", !AppleBleBatterySource.TryParseProximity(msg, out advert), "model 0x1234");
+        Check("短帧不认", !AppleBleBatterySource.TryParseProximity(new byte[8], out advert), "8 bytes");
+
+        // TLV 前面有别的字段时也能走到 0x07。
+        byte[] wrapped = new byte[32];
+        wrapped[0] = 0x01; wrapped[1] = 0x02; wrapped[2] = 0xAA; wrapped[3] = 0xBB;
+        msg[0] = 0x07; msg[3] = 0x14; msg[4] = 0x20; msg[5] = 0x20; msg[6] = 0x89; msg[7] = 0x45;
+        Array.Copy(msg, 0, wrapped, 4, 27);
+        Check("前面有其他 TLV 时仍能解析",
+            AppleBleBatterySource.TryParseManufacturerData(wrapped, out advert) &&
+            advert.Left == 90 && advert.Right == 80, "wrapped");
+    }
+
+    /// <summary>新增设置项（任务栏小组件）能正确读写 settings.json，且默认关闭。</summary>
+    /// <summary>任务栏显示：字形映射、状态色、Piece 语义与命中区间，全部为纯函数断言。</summary>
+    private static void CheckTaskbarDisplay()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 任务栏显示 ===");
+        string glyph; Color boltColor;
+        Color darkFg = Theme.TaskbarForeground(false);
+        Color lightFg = Theme.TaskbarForeground(true);
+        Check("任务栏前景色按明暗区分",
+            darkFg.ToArgb() == Color.White.ToArgb() && lightFg.ToArgb() == Color.Black.ToArgb(),
+            darkFg + "/" + lightFg);
+        Check("低电深色为 255,90,90",
+            Theme.TaskbarLow(false).R == 255 && Theme.TaskbarLow(false).G == 90, "dark");
+        Check("低电浅色为 196,30,40",
+            Theme.TaskbarLow(true).R == 196 && Theme.TaskbarLow(true).G == 30, "light");
+        Check("充电绿与满电蓝不同",
+            Theme.TaskbarCharging(false).ToArgb() != Theme.TaskbarFull(false).ToArgb(), "bolt");
+
+        Check("鼠标字形 E962", TaskbarStripStyle.GlyphFor(DeviceCategory.Mouse) == "\uE962", "mouse");
+        Check("键盘字形 E765", TaskbarStripStyle.GlyphFor(DeviceCategory.Keyboard) == "\uE765", "kbd");
+        Check("耳机字形 E7F6", TaskbarStripStyle.GlyphFor(DeviceCategory.Headset) == "\uE7F6", "headset");
+        Check("手柄字形 E7FC", TaskbarStripStyle.GlyphFor(DeviceCategory.Gamepad) == "\uE7FC", "pad");
+        Check("未知字形 E83F", TaskbarStripStyle.GlyphFor(DeviceCategory.Unknown) == "\uE83F", "other");
+        Check("闪电字形 E945", TaskbarStripStyle.GlyphBolt == "\uE945", "bolt");
+
+        DeviceState dev = Device(12, 0, 0, false);
+        dev.Id = "taskbar:low";
+        Check("12% 判低电", TaskbarStripStyle.IsLow(dev), "12%");
+        dev = Device(60, 0, 0, false);
+        dev.Id = "taskbar:high";
+        Check("60% 不判低电", !TaskbarStripStyle.IsLow(dev), "60%");
+        dev = Device(12, 0, 0, true);
+        dev.Status = DeviceStatus.Charging;
+        Check("充电时不判低电", !TaskbarStripStyle.IsLow(dev), "charging");
+        dev = Device(60, 0, 0, false);
+        dev.Status = DeviceStatus.Sleeping;
+        Check("休眠状态识别", TaskbarStripStyle.IsAsleep(dev), "sleeping");
+
+        dev = Device(80, 0, 0, true);
+        dev.Status = DeviceStatus.Charging;
+        Check("充电中给绿闪电",
+            TaskbarStripStyle.TryBolt(dev, false, out glyph, out boltColor) &&
+            glyph == "\uE945" && boltColor.ToArgb() == Theme.TaskbarCharging(false).ToArgb(), "charging bolt");
+        dev = Device(100, 0, 0, true);
+        dev.Status = DeviceStatus.Charging;
+        Check("充满给蓝闪电",
+            TaskbarStripStyle.TryBolt(dev, false, out glyph, out boltColor) &&
+            boltColor.ToArgb() == Theme.TaskbarFull(false).ToArgb(), "full bolt");
+        dev = Device(80, 0, 0, false);
+        dev.Status = DeviceStatus.Online;
+        Check("未充电无闪电", !TaskbarStripStyle.TryBolt(dev, false, out glyph, out boltColor), "none");
+
+        List<TaskbarPiece> pieces = new List<TaskbarPiece>();
+        dev = Device(9, 0, 0, false);
+        dev.Id = "taskbar:pieces";
+        dev.Status = DeviceStatus.Online;
+        TaskbarStripStyle.AddDevice(pieces, dev, 0, false);
+        Check("低电设备产生字形+数字两段", pieces.Count == 2, pieces.Count.ToString());
+        Check("低电数字为红色", pieces[1].Color.ToArgb() == Theme.TaskbarLow(false).ToArgb(), "color");
+        Check("字形与数字间距 5px", pieces[0].GapAfter == 5, pieces[0].GapAfter.ToString());
+
+        pieces.Clear();
+        dev = Device(100, 0, 0, true);
+        dev.Status = DeviceStatus.Charging;
+        TaskbarStripStyle.AddDevice(pieces, dev, 0, false);
+        Check("满电设备产生三段（含闪电）", pieces.Count == 3, pieces.Count.ToString());
+        Check("数字与闪电间距 2px", pieces[1].GapAfter == 2, pieces[1].GapAfter.ToString());
+
+        Check("任务栏条间距常量正确",
+            TaskbarStripStyle.Pad == 8 && TaskbarStripStyle.GapBetweenDevices == 14, "layout");
+        TaskbarStripRenderer.Layout empty = new TaskbarStripRenderer.Layout();
+        empty.Hits.Add(new int[] { 10, 40, 0 });
+        empty.Hits.Add(new int[] { 50, 90, 1 });
+        Check("命中区间定位第 0 台", TaskbarStripRenderer.HitTest(empty, 20) == 0, "hit0");
+        Check("命中区间定位第 1 台", TaskbarStripRenderer.HitTest(empty, 60) == 1, "hit1");
+        Check("区间外返回 -1", TaskbarStripRenderer.HitTest(empty, 45) == -1, "gap");
+
+        // 托盘类别图标：16px 以上才画，左右半区都要有墨迹，四种类别都能画出来。
+        Check("16px 可画类别图标", IconFactory.CanDrawCategoryGlyph(16, DeviceCategory.Mouse), "16 mouse");
+        Check("8px 不画类别图标", !IconFactory.CanDrawCategoryGlyph(8, DeviceCategory.Mouse), "8 mouse");
+        Check("未知类别不画图标", !IconFactory.CanDrawCategoryGlyph(16, DeviceCategory.Unknown), "unknown");
+        using (Icon withCat = IconFactory.BuildDigitsWithCategory(16, "88", Theme.Green, false, 80,
+            false, "classic", "auto", DeviceCategory.Mouse))
+        using (Icon plain = IconFactory.BuildDigits(16, "88", Theme.Green, false, 80, false, "classic", "auto"))
+        using (Bitmap catBmp = withCat.ToBitmap())
+        using (Bitmap plainBmp = plain.ToBitmap())
+        {
+            Check("类别图标保持 16px 尺寸", withCat.Width == 16 && withCat.Height == 16,
+                withCat.Width + "x" + withCat.Height);
+            int leftInk = 0;
+            int rightInk = 0;
+            int diff = 0;
+            for (int y = 0; y < 16; y++)
+            {
+                for (int x = 0; x < 16; x++)
+                {
+                    if (catBmp.GetPixel(x, y).A > 40)
+                    {
+                        if (x < 5) leftInk++; else rightInk++;
+                    }
+                    if (catBmp.GetPixel(x, y).ToArgb() != plainBmp.GetPixel(x, y).ToArgb()) diff++;
+                }
+            }
+            Check("左侧类别图标有墨迹", leftInk >= 3, leftInk.ToString());
+            Check("右侧数字有墨迹", rightInk >= 5, rightInk.ToString());
+            Check("带类别图标与纯数字位图不同", diff > 5, diff.ToString());
+        }
+        bool allCategoriesOk = true;
+        foreach (DeviceCategory cat in new DeviceCategory[]
+            { DeviceCategory.Mouse, DeviceCategory.Keyboard, DeviceCategory.Headset, DeviceCategory.Gamepad })
+        {
+            using (Icon icon = IconFactory.BuildDigitsWithCategory(16, "55", Theme.Blue, false, 80,
+                false, "soft", "auto", cat))
+            using (Bitmap bitmap = icon.ToBitmap())
+            {
+                int ink = 0;
+                for (int y = 0; y < 16; y++)
+                {
+                    for (int x = 0; x < 5; x++)
+                    {
+                        if (bitmap.GetPixel(x, y).A > 40) ink++;
+                    }
+                }
+                if (ink < 3) allCategoriesOk = false;
+            }
+        }
+        Check("四类设备图标都有墨迹", allCategoriesOk, "categories");
+
+        // 托盘图标状态色：显式固定色优先，自动配色才按低电/充电/满电分级。
+        bool savedAutoColor = AppSettings.Current.AutoColor;
+        int savedCustom = AppSettings.Current.CustomColorArgb;
+        try
+        {
+            DeviceState tray = Device(9, 0, 0, false);
+            tray.Id = "tray:low";
+            AppSettings.Current.AutoColor = false;
+            AppSettings.Current.CustomColorArgb = unchecked((int)0xFF112233);
+            Check("固定色优先于低电红",
+                TaskbarStripStyle.TrayIconColor(tray).ToArgb() == unchecked((int)0xFF112233), "fixed");
+            AppSettings.Current.AutoColor = true;
+            Check("自动配色低电为红",
+                TaskbarStripStyle.TrayIconColor(tray).ToArgb() == Theme.TaskbarLow(Theme.IsSystemTaskbarDark()).ToArgb(), "low");
+            tray = Device(80, 0, 0, true);
+            tray.Status = DeviceStatus.Charging;
+            Check("自动配色充电为绿",
+                TaskbarStripStyle.TrayIconColor(tray).ToArgb() == Theme.TaskbarCharging(Theme.IsSystemTaskbarDark()).ToArgb(), "charge");
+            tray = Device(100, 0, 0, true);
+            tray.Status = DeviceStatus.Charging;
+            Check("自动配色满电为蓝",
+                TaskbarStripStyle.TrayIconColor(tray).ToArgb() == Theme.TaskbarFull(Theme.IsSystemTaskbarDark()).ToArgb(), "full");
+            tray = Device(60, 0, 0, false);
+            tray.Status = DeviceStatus.Sleeping;
+            Check("自动配色休眠变淡",
+                TaskbarStripStyle.TrayIconColor(tray).ToArgb() == Theme.Faint.ToArgb(), "sleep");
+        }
+        finally
+        {
+            AppSettings.Current.AutoColor = savedAutoColor;
+            AppSettings.Current.CustomColorArgb = savedCustom;
+        }
+    }
+
+    private static void CheckNewSettingsRoundTrip()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 新增设置项 ===");
+        SettingsData defaults = new SettingsData();
+        Check("任务栏小组件默认关闭", !defaults.TaskbarWidgetEnabled &&
+            defaults.TaskbarOffsetX == 0, "default");
+        Check("电压估算默认关闭", !defaults.AllowVoltageEstimate, "default");
+
+        string original = AppSettings.SettingsPath;
+        string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "VoltPick.SettingsTest." + Guid.NewGuid().ToString("N"));
+        try
+        {
+            System.IO.Directory.CreateDirectory(dir);
+            AppSettings.ConfigDirectoryOverride = dir;
+            AppSettings.Current.TaskbarWidgetEnabled = true;
+            AppSettings.Current.TaskbarOffsetX = -42;
+            AppSettings.Current.AllowVoltageEstimate = true;
+            AppSettings.Save();
+            AppSettings.Current = new SettingsData();
+            AppSettings.Load();
+            Check("小组件开关往返", AppSettings.Current.TaskbarWidgetEnabled, "enabled");
+            Check("小组件偏移往返", AppSettings.Current.TaskbarOffsetX == -42,
+                AppSettings.Current.TaskbarOffsetX.ToString());
+            Check("电压估算开关往返", AppSettings.Current.AllowVoltageEstimate, "enabled");
+        }
+        finally
+        {
+            AppSettings.ConfigDirectoryOverride = null;
+            AppSettings.Current = new SettingsData();
+            try { System.IO.Directory.Delete(dir, true); } catch (Exception) { }
+        }
+    }
+
+    private static BatteryHistorySample Sample(long minutes, int percent, int charging)
+    {
+        BatteryHistorySample s = new BatteryHistorySample();
+        s.Time = minutes * 60;
+        s.Percent = percent;
+        s.Charging = charging;
+        return s;
+    }
+
+    /// <summary>历史统计：速率/续航/剩余时间、断点不跨段、数据不足不给猜测值。</summary>
+    private static void CheckBatteryStats()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 电量历史统计 ===");
+        BatteryStats st;
+
+        st = BatteryStats.Compute(new BatteryHistorySample[0], null, null);
+        Check("空历史无速率", !st.DischargeRatePerHour.HasValue && st.Readings == 0, "empty");
+
+        // 数据太少：20 分钟掉 1% 不足以算速率。
+        st = BatteryStats.Compute(new BatteryHistorySample[]
+            { Sample(0, 80, 0), Sample(20, 79, 0) }, 79, false);
+        Check("数据不足不给速率", !st.DischargeRatePerHour.HasValue && !st.RemainingHours.HasValue, "thin");
+
+        // 100% -> 80% 用了 4 小时：5 %/小时、20 小时续航、当前 80% 剩 16 小时。
+        BatteryHistorySample[] discharge = new BatteryHistorySample[]
+        {
+            Sample(0, 100, 0), Sample(60, 95, 0), Sample(120, 90, 0),
+            Sample(180, 85, 0), Sample(240, 80, 0)
+        };
+        st = BatteryStats.Compute(discharge, 80, false);
+        Check("放电速率 5%/小时", st.DischargeRatePerHour.HasValue &&
+            Math.Abs(st.DischargeRatePerHour.Value - 5.0) < 1e-9,
+            st.DischargeRatePerHour.HasValue ? st.DischargeRatePerHour.Value.ToString() : "null");
+        Check("满电续航 20 小时", st.BatteryLifeHours.HasValue &&
+            Math.Abs(st.BatteryLifeHours.Value - 20.0) < 1e-9, "life");
+        Check("当前剩余 16 小时", st.RemainingHours.HasValue &&
+            Math.Abs(st.RemainingHours.Value - 16.0) < 1e-9, "left");
+        Check("监测总时长 4 小时", st.MonitoredSeconds == 240 * 60, st.MonitoredSeconds.ToString());
+        st = BatteryStats.Compute(discharge, 80, true);
+        Check("充电时不给剩余时间", !st.RemainingHours.HasValue, "charging");
+
+        // 断点：中间关机 10 小时，断点期间的掉电不算进速率。
+        BatteryHistorySample[] gap = new BatteryHistorySample[]
+        {
+            Sample(0, 50, 0), Sample(60, 45, 0), Sample(660, 20, 0), Sample(720, 15, 0)
+        };
+        st = BatteryStats.Compute(gap, null, null);
+        Check("断点切成两段", st.Discharges.Count == 2, st.Discharges.Count.ToString());
+        Check("断点不计入速率", st.DischargeRatePerHour.HasValue &&
+            Math.Abs(st.DischargeRatePerHour.Value - 5.0) < 1e-9, "rate");
+        Check("断点期间不算监测时长", st.MonitoredSeconds == 120 * 60, st.MonitoredSeconds.ToString());
+
+        // 充电：50% -> 100% 用 1 小时，50 %/小时，充满 2 小时，当前 60% 还需 0.8 小时。
+        BatteryHistorySample[] charge = new BatteryHistorySample[]
+        {
+            Sample(0, 60, 0), Sample(60, 50, 0), Sample(61, 50, 1),
+            Sample(91, 80, 1), Sample(121, 100, 1), Sample(200, 100, 1), Sample(201, 100, 0)
+        };
+        st = BatteryStats.Compute(charge, 60, true);
+        Check("充电区间数 1", st.Charges.Count == 1, st.Charges.Count.ToString());
+        Check("充电区间从50到100用1小时", st.Charges.Count == 1 &&
+            st.Charges[0].From == 50 && st.Charges[0].To == 100 &&
+            st.Charges[0].Seconds == 60 * 60, "session");
+        Check("充满标记为完成", st.Charges.Count == 1 && st.Charges[0].Completed, "completed");
+        Check("充电速率 50%/小时", st.ChargeRatePerHour.HasValue &&
+            Math.Abs(st.ChargeRatePerHour.Value - 50.0) < 1e-9, "rate");
+        Check("充满需要 2 小时", st.FullChargeHours.HasValue &&
+            Math.Abs(st.FullChargeHours.Value - 2.0) < 1e-9, "full");
+        Check("当前还需 0.8 小时", st.ToFullHours.HasValue &&
+            Math.Abs(st.ToFullHours.Value - 0.8) < 1e-9, "toFull");
+        Check("最近充电时间", st.LastCharged.HasValue && st.LastCharged.Value == 121 * 60, "last");
+
+        // 格式化
+        Check("时长格式 30 分钟", BatteryStats.FormatHours(0.5) == "30 分钟", "fmt");
+        Check("速率格式 4.3 %/小时", BatteryStats.FormatRate(4.26) == "4.3 %/小时", "fmt");
     }
 
     private static void CheckHistoryGate()

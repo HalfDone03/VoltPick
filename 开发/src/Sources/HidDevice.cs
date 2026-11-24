@@ -22,6 +22,44 @@ namespace DeviceBattery
         public ushort OutputReportLength;
         public ushort FeatureReportLength;
 
+        /// <summary>
+        /// USB 接口号（实例 ID 里的 &amp;MI_XX），取不到时是 -1。同一个接收器经常把
+        /// 不同用途的集合分在不同接口上（SONiX 键盘的 FF60 集合只在接口 3 上应答），
+        /// 没有接口号就分不清「同一台设备的另一个集合」和「另一台设备」。
+        /// </summary>
+        public int InterfaceNumber = -1;
+
+        /// <summary>从设备实例 ID 里取出接口号，形如 HID\VID_373B&amp;PID_11FE&amp;MI_01&amp;COL07\...</summary>
+        internal static int ParseInterfaceNumber(string instanceId)
+        {
+            if (string.IsNullOrEmpty(instanceId))
+            {
+                return -1;
+            }
+            const string marker = "&MI_";
+            int at = instanceId.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (at < 0)
+            {
+                return -1;
+            }
+            int start = at + marker.Length;
+            int end = start;
+            while (end < instanceId.Length && Uri.IsHexDigit(instanceId[end]))
+            {
+                end++;
+            }
+            if (end == start || end - start > 2)
+            {
+                return -1;
+            }
+            int value;
+            return int.TryParse(instanceId.Substring(start, end - start),
+                System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out value)
+                ? value
+                : -1;
+        }
+
         public string ShortId
         {
             get
@@ -62,6 +100,76 @@ namespace DeviceBattery
     internal static class HidEnumerator
     {
         private static readonly Guid HidInterfaceGuid = new Guid("4D1E55B2-F16F-11CF-88CB-001111000030");
+
+        /// <summary>
+        /// 只枚举 HID 接口路径，不打开设备、不取属性。用来在两次完整发现之间判断
+        /// 设备集合有没有变化：没变化就复用上一轮的探测结果，省掉对每台接口
+        /// CreateFile + HidD_GetPreparsedData 的开销。
+        /// </summary>
+        public static List<string> ListPaths()
+        {
+            List<string> result = new List<string>();
+            Guid interfaceGuid = HidInterfaceGuid;
+            IntPtr deviceInfoSet = Native.SetupDiGetClassDevs(
+                ref interfaceGuid, IntPtr.Zero, IntPtr.Zero,
+                Native.DIGCF_PRESENT | Native.DIGCF_DEVICEINTERFACE);
+            if (deviceInfoSet == new IntPtr(-1) || deviceInfoSet == IntPtr.Zero)
+            {
+                return result;
+            }
+            try
+            {
+                for (int index = 0; ; index++)
+                {
+                    Native.SP_DEVICE_INTERFACE_DATA interfaceData = new Native.SP_DEVICE_INTERFACE_DATA();
+                    interfaceData.cbSize = Marshal.SizeOf(typeof(Native.SP_DEVICE_INTERFACE_DATA));
+                    if (!Native.SetupDiEnumDeviceInterfaces(deviceInfoSet, IntPtr.Zero, ref interfaceGuid,
+                        index, ref interfaceData))
+                    {
+                        break;
+                    }
+                    IntPtr detail = Marshal.AllocHGlobal(4096);
+                    try
+                    {
+                        Marshal.WriteInt32(detail, IntPtr.Size == 8 ? 8 : 6);
+                        Native.SP_DEVINFO_DATA infoData = new Native.SP_DEVINFO_DATA();
+                        infoData.cbSize = Marshal.SizeOf(typeof(Native.SP_DEVINFO_DATA));
+                        int required = 0;
+                        if (!Native.SetupDiGetDeviceInterfaceDetail(deviceInfoSet, ref interfaceData,
+                            detail, 4096, ref required, ref infoData))
+                        {
+                            continue;
+                        }
+                        string path = Marshal.PtrToStringUni(new IntPtr(detail.ToInt64() + 4));
+                        if (!string.IsNullOrEmpty(path))
+                        {
+                            result.Add(path);
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(detail);
+                    }
+                }
+            }
+            finally
+            {
+                Native.SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            }
+            result.Sort(StringComparer.Ordinal);
+            return result;
+        }
+
+        /// <summary>两次路径快照是否完全一致（顺序无关，已排序）。</summary>
+        internal static bool SamePaths(List<string> a, List<string> b)
+        {
+            if (a == null || b == null || a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (!string.Equals(a[i], b[i], StringComparison.Ordinal)) return false;
+            }
+            return true;
+        }
 
         public static List<HidDeviceInfo> FindAll()
         {
@@ -546,6 +654,7 @@ namespace DeviceBattery
                 if (Native.SetupDiGetDeviceInstanceId(deviceInfoSet, ref infoData, instance, instance.Capacity, out required))
                 {
                     info.InstanceId = instance.ToString();
+                    info.InterfaceNumber = HidDeviceInfo.ParseInterfaceNumber(info.InstanceId);
                 }
 
                 if (string.IsNullOrEmpty(info.ProductName))
@@ -693,6 +802,53 @@ namespace DeviceBattery
                 return false;
             }
             return Native.HidD_GetFeature(_handle, buffer, buffer.Length);
+        }
+
+        public bool SetFeature(byte[] buffer)
+        {
+            if (_handle == Native.InvalidHandle || buffer == null || buffer.Length == 0)
+            {
+                return false;
+            }
+            return Native.HidD_SetFeature(_handle, buffer, buffer.Length);
+        }
+
+        public bool GetInputReport(byte[] buffer)
+        {
+            if (_handle == Native.InvalidHandle || buffer == null || buffer.Length == 0)
+            {
+                return false;
+            }
+            return Native.HidD_GetInputReport(_handle, buffer, buffer.Length);
+        }
+
+        public bool SetOutputReport(byte[] buffer)
+        {
+            if (_handle == Native.InvalidHandle || buffer == null || buffer.Length == 0)
+            {
+                return false;
+            }
+            return Native.HidD_SetOutputReport(_handle, buffer, buffer.Length);
+        }
+
+        /// <summary>
+        /// 清空驱动里排队的老报告。每次发请求前调一次，避免读到上一轮的迟到回包。
+        /// </summary>
+        public void Flush()
+        {
+            if (_handle != Native.InvalidHandle)
+            {
+                Native.HidD_FlushQueue(_handle);
+            }
+        }
+
+        /// <summary>
+        /// 只走 feature 通道的设备（输入报告长度为 0）用这个入口打开，
+        /// 语义与 Open() 相同，只是把意图写清楚，免得后来者以为忘了读输入。
+        /// </summary>
+        public bool OpenFeatureOnly(string path)
+        {
+            return Open(path);
         }
 
         /// <summary>

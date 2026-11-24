@@ -13,8 +13,7 @@ namespace DeviceBattery
 
         private void BuildNotifyPage()
         {
-            TabPage page = _tabs.TabPages[3];
-
+            // 分组挂到本页的内容面板（由 LayoutPages 负责滚动容器尺寸）。
             SettingsSection low = new SettingsSection("低电量提醒");
             _lowWarn = NewCheck("低于阈值时弹通知");
             low.AddRow(_lowWarn);
@@ -46,7 +45,7 @@ namespace DeviceBattery
             dnd.AddRow(NewNote("格式是 24 小时的 时:分，例如 23:00 至 07:00 表示跨夜。"));
             _notify.Add(dnd);
 
-            AddSections(page, _notify);
+            AddSections(_pageContent[2], _notify);
         }
     }
 }

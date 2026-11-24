@@ -42,6 +42,7 @@ namespace DeviceBattery
             if (string.Equals(value, "mouse", StringComparison.Ordinal)) { return 1; }
             if (string.Equals(value, "keyboard", StringComparison.Ordinal)) { return 2; }
             if (string.Equals(value, "headset", StringComparison.Ordinal)) { return 3; }
+            if (string.Equals(value, "gamepad", StringComparison.Ordinal)) { return 4; }
             return 0;
         }
 
@@ -52,6 +53,7 @@ namespace DeviceBattery
                 case 1: return "mouse";
                 case 2: return "keyboard";
                 case 3: return "headset";
+                case 4: return "gamepad";
                 default: return "auto";
             }
         }

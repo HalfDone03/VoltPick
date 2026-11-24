@@ -661,7 +661,21 @@ namespace DeviceBattery
                         { 0xF507, "Pulsar X2 V2 Mini（有线）" },
                         { 0xF58F, "ATK VXE R1 SE+（有线）" },
                         { 0xF58A, "VXE R1 Pro Max（2.4G）" },
-                        { 0xF58C, "VXE R1 Pro Max（有线）" }
+                        { 0xF58C, "VXE R1 Pro Max（有线）" },
+                        { 0xF5F7, "Scyrox V6 / V8（2.4G）" },
+                        { 0xF5F6, "Scyrox V6 / V8（有线）" },
+                        { 0xF57C, "Kysona M600（2.4G）" },
+                        { 0xF57D, "Kysona M600（有线）" },
+                        { 0xF5D5, "Kysona M600 v2（2.4G）" },
+                        { 0xF510, "LAMZU 无线鼠标（4K）" },
+                        { 0xF50F, "LAMZU 无线鼠标（有线）" }
+                    }
+                },
+                { 0x373B, new Dictionary<ushort, string>
+                    {
+                        { 0x1085, "ATK VXE R1 SE+（2.4G）" },
+                        { 0x101B, "ATK 8K 鼠标" },
+                        { 0x11D9, "ATK 8K 鼠标（dongle-L）" }
                     }
                 },
                 { 0x3770, new Dictionary<ushort, string>
@@ -675,7 +689,7 @@ namespace DeviceBattery
                         { 0x5406, "Pulsar X2 CrazyLight Mini（2.4G）" },
                         { 0x3414, "Pulsar X2 CrazyLight Mini（有线）" }
                     }
-                }
+                },
             };
 
         public override string Id

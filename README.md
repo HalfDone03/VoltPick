@@ -22,13 +22,14 @@ Version **v1.0**.
 
 ## 功能
 
-* **托盘图标**：默认合并成一个图标显示最低电量设备，也可每台设备一个图标；可固定显示鼠标/键盘/耳机，或指定某台设备。断连会自动回退。
+* **托盘图标**：默认合并成一个图标显示最低电量设备，也可每台设备一个图标；可固定显示鼠标/键盘/耳机，或指定某台设备。断连会自动回退。16px 以上槽位默认在电量数字左侧画一个设备类别小图标（鼠标/键盘/耳机/手柄），可在设置 → 显示里关掉；8px 槽位和未知类别自动回落成纯数字，不会糊成一团。
 * **鼠标悬停看全部**：把鼠标停在托盘图标上就能看到各设备电量，不用打开面板。系统对提示文字有 63 字符上限，所以按「电量最低优先」排序，超出的设备用「另 N 台」概括——最该关注的那台一定看得见。
 * **设备面板**：左键托盘打开，显示已连接设备的电量、状态和更新时间。设备多时最多 4 张卡片，右侧出现滚动条。
 * **电量历史**：保留最近 7 天的本地采样，可查看 24 小时/7 天趋势图；鼠标悬停在曲线上可查看该时刻的具体电量。数据存在配置目录，不联网。
 * **低电提醒**：全局 20% / 15% / 10% / 5% 各提醒一次；也可在设置 → 设备给单台设备单独设置阈值，可选「关闭 / 5% / 10% / 15% / 20% / 25% / 30%」。支持免打扰时段和全屏抑制。
 * **托盘图标样式**：图标不再画底色块，只有数字（铺满 16×16 托盘位置）；「图标颜色」直接就是数字颜色，笔画实心、不加描边（描边在 16px 下会把字糊成一团）；数字按长方形比例铺满整个槽位，横向最多拉伸 1.3 倍。数字大小分「不显示数字（留点）/ 较小 / 标准 / 较大」四档（选「不显示数字」时只留一个小圆点，免得托盘上完全看不见、点不到），样式分「柔和（细窄）/ 经典（高大）/ 圆润（扁矮）」三种。数字字体可在设置里单独选（跟随样式 / 粗黑 / 半粗 / 常规加粗 / 雅黑加粗 / Verdana / Tahoma / Arial Black / Bahnschrift / Impact，默认「跟随样式」，缺字体时自动退回 Segoe UI，不会画成空白图标）。
 * **主题**：跟随系统 / 浅色 / 深色，作用于面板、设置和历史窗口。
+* **任务栏显示（实验）**：设置 → 显示 可开启「在任务栏时钟旁显示电量」，把「类别字形 + 百分比」贴到通知区左侧；充电时带绿色闪电、充满是蓝色，低电变红，休眠变淡。鼠标悬停可看设备卡片（名称、大号电量、连接状态、最近 24 小时曲线），点击可固定托盘到该设备。布局失败 3 秒自动回退托盘图标，开启后托盘图标仍保留。仅支持 Win10/11 底部横向任务栏。
 
 ![设置 → 通用](开发/assets/screenshots/settings-general.png)
 
@@ -58,7 +59,7 @@ Version **v1.0**.
 ## 目录结构
 
 ```text
-电量监测/
+VoltPick/
 ├─ VoltPick.exe          开发版成品，双击即用
 ├─ README.md             本文件（程序启动时按 exe 同目录读取）
 ├─ AGENTS.md             本项目的开发约定
@@ -69,7 +70,7 @@ Version **v1.0**.
    ├─ lib/winmd/         编译所需的 WinRT 引用
    ├─ assets/            图标 app.ico、源图 icon-source.jpg、截图
    ├─ build.ps1          重新编译 exe（输出到上一层目录）
-   └─ test.ps1           重建 exe 并跑全部自测（305 条断言 + 3 个冒烟程序）
+   └─ test.ps1           重建 exe 并跑全部自测（469 条断言 + 5 个冒烟程序）
 ```
 
 开发时改 `开发/`，`build.ps1` 把 exe 输出到最外层（也就是本文件旁边）。不做打包发布，只保留一个 exe。
@@ -87,7 +88,7 @@ powershell -ExecutionPolicy Bypass -File .\test.ps1
 
 不需要安装 SDK，使用 Windows 自带的 .NET Framework 4.8 `csc.exe`。WinRT 引用在 `lib/winmd/`。
 
-`test.ps1` 会先重建 exe，再依次跑 305 条断言和 3 个冒烟程序（托盘、历史、面板滚动）。断言条数由 `TestHarness` 里的 `ExpectedChecks` 核对，少跑一条也算失败；任何一步失败都会以非 0 退出。临时 exe 都写在 `tests/` 下，结束时统一删除。
+`test.ps1` 会先重建 exe，再依次跑 469 条断言和 5 个冒烟程序（托盘、历史、面板滚动、报文探测）。断言条数由 `TestHarness` 里的 `ExpectedChecks` 核对，少跑一条也算失败；任何一步失败都会以非 0 退出。临时 exe 都写在 `tests/` 下，结束时统一删除。
 
 `app.ico` 由 `assets/icon-source.jpg` 生成十档尺寸（16/20/24/32/40/48/64/96/128/256）：线性光下逐级 2×2 减半 → 带预滤波的 Catmull-Rom 重采样 → 双边保边平滑 → 5×5 二项式掩膜锐化 → 4×4 超采样圆角，小尺寸另走注意力裁切与去噪；换图标时改源图，再手动跑一次 `tools/MakeIcon.cs`（不参与 build/test，命令行写在文件头注释里）。
 
@@ -118,10 +119,28 @@ Get-Process -Name 'VoltPick' -ErrorAction SilentlyContinue | ForEach-Object { $_
 | **Airoha 方案** | 用该方案的部分 TWS 耳机（如部分 REDMI Buds） | 蓝牙 GATT 厂商服务 |
 | **标准 HID 电池页** | 多数蓝牙键鼠、部分 2.4G 接收器（不限品牌） | HID 使用页 `0x06` 的 `0x20` StateOfCharge / `0x24` RelativeStateOfCharge，Feature 优先、Input 回退 |
 | **蓝牙 LE 标准电量服务** | 提供 `0x180F` 的耳机、键鼠 | GATT `0x180F` / `0x2A19` |
+| **VGN / VXE / ATK 键盘**（Evision） | S99、V98 PRO、N75 PRO、VXE75、V87、ATK V75X | FF1C:0092 集合的 `04 … 1A` 问答，接收器最多每 10 分钟问一次 |
+| **AULA / MCHOSE 键盘**（BY 接收器） | AULA F75/F87/F99、MCHOSE G75 V2/K99 V3 | `3554:FA09/FB40`、`41E4:2001`，20 字节 `13 4A` 帧 |
+| **MCHOSE GLW** | G75 V2、G87 V2、K99 V3（`3837:3033`） | 65 字节 GLW 功能配置读 `55 05`，payload[32] 是电量+充电位 |
+| **SONiX 键盘** | AULA F108 Pro、AJAZZ AK820 MAX / AK980 V2 | 接口 3 的 FF60:0061 集合，`20 01 00 LL` 回包 |
+| **Corsair** | Void / HS70 系列（18 个 PID）、Virtuoso XT / HS80 MAX（Bragi） | Void 的 `C9 64` 状态报告；Bragi 的 `02 09 02` 属性 GET |
+| **HyperX 旧款** | Cloud Flight、Stinger Core Wireless、Cloud Alpha Wireless | 电压报告 + HeadsetControl 标定曲线（Flight/Alpha），feature FF 问答（Stinger） |
+| **Razer 耳机** | BlackShark V3 / V2 Pro (2023)、Barracuda X Chroma | FF14 属性协议；V3 限每 30 分钟问一次，避免耳机重启 |
+| **罗技 G533** | G533 无线耳机（`046D:0A66`） | 固定 HID++ 请求读电压，按 HeadsetControl 曲线换算 |
+| **Scyrox / ATK 8K / LAMZU / Kysona** | Scyrox V6/V8、ATK Fire X 8K、LAMZU 4K、Kysona M600 | CompX report 8 的 17 字节 `08 04` 帧（与 Pulsar 同族） |
+| **AULA 8K 鼠标** | X9 Ultra、V9 / V9 Max+（`320F:22A0`） | START→电量→END 三段式事务，64 字节 report 04 |
+| **Endgame Gear 4K** | OP1w 4k / XM2w 4k 各版本（`3367:1970`） | feature A1 问答，B4 读电量、0E 读鼠标型号 |
+| **ZOWIE DW** | FK2-DW、U2-DW、S2-DW、EC-DW（`04A5:800A/8008`） | 输出 FF03 / 输入 FF04 双集合；只回报电压，设置里开启「按电压估算」后才显示档位电量 |
+| **Redragon / Areson** | M913 Impact Elite、M915RGB-WL（`25A7:FA07/FA08`） | feature 请求 + input 回包，17 字节帧整帧和 `0x55` |
+| **Xbox 手柄** | Xbox One / Series、GameSir（部分） | Windows.Gaming.Input 精确毫瓦时读数，回退 XInput 粗档位 |
+| **PlayStation 手柄** | DualShock 4、DualSense、DualSense Edge | USB/BT 输入报告里的电量位，BT 下先读 feature 05 切完整报告 |
+| **AirPods / Beats** | 支持邻近配对广播的型号 | BLE 厂商数据（公司 `0x004C`，类型 `0x07`）里的左右耳/充电盒电量，被动监听、不发送报文 |
 
 ### 暂不支持（未实现私有协议）
 
-海盗船 Corsair（Void 系列与其 bragi 协议的无线鼠标）、Keychron 等厂商的私有 HID 协议，以及多数国产 2.4G 接收器（名字形如 `2.4G Receiver`、且不暴露标准电池页的设备），目前读不到电量。这些设备按「读不到就不显示」的规则不出现在面板，但记录保留在 「设置 → 设备」里。
+Keychron 等厂商的私有 HID 协议，以及多数国产 2.4G 接收器（名字形如 `2.4G Receiver`、且不暴露标准电池页的设备），目前读不到电量。Corsair Void 耳机与 Bragi 接收器已经支持，但 Bragi 无线鼠标、原版 C++ BatteryHub 支持的部分冷门型号仍未实现。这些设备按「读不到就不显示」的规则不出现在面板，但记录保留在「设置 → 设备」里。
+
+新设备协议靠公开的逆向资料实现，没有实机的型号一律按「读不到就不显示」回退；如果你手上的设备没出现，可以用面板 → 诊断 → 「报文探测…」（或命令行 `--listen VID:PID`）录一段只读报文，连同型号一起反馈。
 
 想确认某台设备走的是哪条通道，打开设置 → 支持，或看日志里的「设备发现」一行；面板的「诊断信息」里也有每台设备的来源。
 
@@ -145,6 +164,22 @@ Get-Process -Name 'VoltPick' -ErrorAction SilentlyContinue | ForEach-Object { $_
 | 耳机 | 罗技 HID++ 2.0 | ✅ G 系列无线耳机 |
 | 耳机 | 其它 2.4G 接收器 | ❌ 通常只传音频和按键，不传电量；按「读不到就不显示」规则不出现在面板 |
 | 耳机 | 经典蓝牙（仅 HFP） | ❌ 通道被 Windows 音频独占，程序不抢占音频 |
+| 耳机 | AirPods / Beats 的 BLE 邻近广播 | ✅ 被动监听厂商广播，左右耳/充电盒分别显示 |
+| 手柄 | Xbox One / Series、GameSir | ✅ Windows.Gaming.Input 精确电量；回退 XInput 粗档位 |
+| 手柄 | DualShock 4 / DualSense / Edge | ✅ USB 与蓝牙输入报告，蓝牙先读 feature 05 |
+| 手柄 | 其它 XInput 手柄 | ⚠️ 只有粗档位（0/25/50/100%），卡片会标注 |
+
+## 命令行
+
+除双击启动外，`VoltPick.exe` 支持以下参数：
+
+| 参数 | 作用 |
+| --- | --- |
+| `--panel` / `--settings` | 启动后直接打开设备面板 / 设置 |
+| `--once` / `--snapshot` | 读取一次所有设备，写出 `device-battery-once.json` 后退出 |
+| `--listen VID:PID` | **只读**探测某设备的 HID 报文 15 秒，结果写到 `listen-VID-PID.txt` 并用记事本打开；不会向设备写入任何字节。例如 `--listen 1D57:FA60` |
+| `--autostart on/off` | 设置开机自启 |
+| `--portable` / `--no-portable` | 切换便携模式（配置放 exe 同目录 / `%APPDATA%`） |
 
 ## 系统兼容性
 
@@ -166,7 +201,7 @@ Get-Process -Name 'VoltPick' -ErrorAction SilentlyContinue | ForEach-Object { $_
 
 ## 当前边界
 
-* **不伪造读数**：读不到就不显示。托盘与面板只列出「当前连接且能真正读出电量」的设备，读不到电量的设备（有线键盘、2.4G 接收器耳机、经典蓝牙 HFP、耳机只读出充电盒等）不占卡片，但记录仍保留在「设置 → 设备」里，可以重命名、单独设低电阈值。永远不显示 0% 或估计值，也不做电压换算。历史曲线超过 2 小时的间隔画成断点，不插值。
+* **不伪造读数**：读不到就不显示。托盘与面板只列出「当前连接且能真正读出电量」的设备，读不到电量的设备（有线键盘、2.4G 接收器耳机、经典蓝牙 HFP、耳机只读出充电盒等）不占卡片，但记录仍保留在「设置 → 设备」里，可以重命名、单独设低电阈值。默认永远不显示 0% 或估计值，也不做电压换算；只有 ZOWIE 这类「只回报电压」的设备，在用户显式开启「按电压估算」后才按厂商标定档位换算，卡片会标注来源。历史曲线超过 2 小时的间隔画成断点，不插值。
 * **大跳变需确认**：设备侧电量计可能在两个稳定状态之间切换（实测某 2.4G 鼠标在 40% 与 55% 之间来回，各自能维持数十分钟到数小时）。读数与上次确认值相差 ≥10 个百分点时先挂起，需连续两次读到同一新值才生效；挂起期间界面继续显示旧值，最多 2 分钟再确认一次，避免历史曲线被画成锯齿。
 * **经典蓝牙 HFP**：Windows 音频占用 HFP 通道时无法并行读取，Classic 设备明确降级。
 * **键盘电量**：标准 HID/蓝牙 LE 路径已实现，开发环境没有无线键盘样本，只验证了「无键盘时枚举不崩溃」和按设备名归类为键盘的逻辑，实际读数待真机验证。

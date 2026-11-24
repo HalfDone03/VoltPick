@@ -443,6 +443,86 @@ namespace DeviceBattery
             return false;
         }
 
+        /// <summary>把颜色向白色混合 amount（0..1）。进度条/按钮渐变用，避免各处自己写死亮色。</summary>
+        public static Color Lighten(Color color, float amount)
+        {
+            if (amount <= 0f) return color;
+            if (amount > 1f) amount = 1f;
+            return Color.FromArgb(color.A,
+                (int)(color.R + (255 - color.R) * amount),
+                (int)(color.G + (255 - color.G) * amount),
+                (int)(color.B + (255 - color.B) * amount));
+        }
+
+        /// <summary>把颜色向黑色混合 amount（0..1）。</summary>
+        public static Color Darken(Color color, float amount)
+        {
+            if (amount <= 0f) return color;
+            if (amount > 1f) amount = 1f;
+            return Color.FromArgb(color.A,
+                (int)(color.R * (1f - amount)),
+                (int)(color.G * (1f - amount)),
+                (int)(color.B * (1f - amount)));
+        }
+
+        /// <summary>按 alpha 给颜色加透明度，卡片描边/徽标背景用。</summary>
+        public static Color Alpha(Color color, int alpha)
+        {
+            return Color.FromArgb(alpha, color);
+        }
+
+        /// <summary>系统任务栏是深色还是浅色。读 SystemUsesLightTheme，和应用主题（AppsUseLightTheme）分开。</summary>
+        public static bool IsSystemTaskbarDark()
+        {
+            try
+            {
+                using (Microsoft.Win32.RegistryKey key =
+                    Microsoft.Win32.Registry.CurrentUser.OpenSubKey(PersonalizeKey))
+                {
+                    if (key != null)
+                    {
+                        object system = key.GetValue("SystemUsesLightTheme");
+                        if (system != null)
+                        {
+                            return Convert.ToInt32(system) == 0;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+            // 取不到值时按系统默认浅色处理，任务栏文字用黑字更安全。
+            return false;
+        }
+
+        // ---- 任务栏显示专用色（取自 BatteryHub 的配色，按明暗两套）----
+        // 这些是任务栏条/悬浮卡片用的色，和面板的 LevelColor 分开，避免互相影响。
+        public static Color TaskbarForeground(bool light)
+        {
+            return light ? Color.FromArgb(0, 0, 0) : Color.FromArgb(255, 255, 255);
+        }
+
+        public static Color TaskbarLow(bool light)
+        {
+            return light ? Color.FromArgb(196, 30, 40) : Color.FromArgb(255, 90, 90);
+        }
+
+        public static Color TaskbarCharging(bool light)
+        {
+            return light ? Color.FromArgb(16, 124, 16) : Color.FromArgb(108, 203, 95);
+        }
+
+        public static Color TaskbarFull(bool light)
+        {
+            return light ? Color.FromArgb(0, 120, 212) : Color.FromArgb(96, 205, 255);
+        }
+
+        public static Color TaskbarPlate(bool light)
+        {
+            return light ? Color.FromArgb(243, 243, 243) : Color.FromArgb(32, 32, 32);
+        }
+
         public static Color LevelColor(int percent)
         {
             if (percent <= 10) return Red;
@@ -525,6 +605,11 @@ namespace DeviceBattery
         public const float FontBody = 11.5f;
         public const float FontTitle = 13f;
         public const float FontValue = 13f;
+        // 自绘面板专用字号：面板比二级页面紧凑，单独给两档，避免各页面自造
+        // 7.5 / 8 / 8.5 / 9 这类中间值——同一屏里字号不齐是“乱而丑”的主要来源。
+        public const float FontPanelCaption = 9f;  // 胶囊、状态说明、页脚状态
+        public const float FontPanelBody = 10.5f; // 设备名、按钮、明细
+        public const float FontPanelValue = 22f;  // 卡片上的大号百分比
         public static Font UiFont(float size, FontStyle style)
         {
             try

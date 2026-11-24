@@ -46,10 +46,19 @@ namespace DeviceBattery
         public bool AutoColor = true;
         public int CustomColorArgb = unchecked((int)0xFF22C55E);
         public bool ShowVoltage = true;
+        // 托盘电量数字旁显示设备类别图标（鼠标/键盘/耳机/手柄）。
+        // 默认关闭：16px 槽位同时放数字和类别图标会互相挤，数字反而看不清。
+        public bool TrayShowCategoryIcon = false;
         public bool HistoryEnabled = true;
         public bool PortableMode = false;
         public bool FirstRunHintShown = false;
         public bool StartWithPanel = false;
+        // 任务栏小组件（实验性）：默认关闭，开启后托盘图标仍然保留，
+        // 布局放不进去时自动回退到普通托盘显示。
+        public bool TaskbarWidgetEnabled = false;
+        public int TaskbarOffsetX = 0;
+        // 只回报电压的设备（ZOWIE）默认按「读不到」处理；用户显式开启后才按标定档位换算。
+        public bool AllowVoltageEstimate = false;
         public bool PanelPositionSaved = false;
         public int PanelX = 0;
         public int PanelY = 0;
@@ -946,9 +955,13 @@ namespace DeviceBattery
             Current.AutoColor = GetBool(root, "autoColor", true);
             Current.CustomColorArgb = GetInt(root, "customColorArgb", unchecked((int)0xFF22C55E));
             Current.ShowVoltage = GetBool(root, "showVoltage", true);
+            Current.TrayShowCategoryIcon = GetBool(root, "trayShowCategoryIcon", false);
             Current.HistoryEnabled = GetBool(root, "historyEnabled", true);
             Current.FirstRunHintShown = GetBool(root, "firstRunHintShown", false);
             Current.StartWithPanel = GetBool(root, "startWithPanel", false);
+            Current.TaskbarWidgetEnabled = GetBool(root, "taskbarWidgetEnabled", false);
+            Current.TaskbarOffsetX = GetInt(root, "taskbarOffsetX", 0);
+            Current.AllowVoltageEstimate = GetBool(root, "allowVoltageEstimate", false);
             Current.PanelPositionSaved = GetBool(root, "panelPositionSaved", false);
             Current.PanelX = GetInt(root, "panelX", 0);
             Current.PanelY = GetInt(root, "panelY", 0);
@@ -1086,10 +1099,14 @@ namespace DeviceBattery
             root["autoColor"] = Current.AutoColor;
             root["customColorArgb"] = Current.CustomColorArgb;
             root["showVoltage"] = Current.ShowVoltage;
+            root["trayShowCategoryIcon"] = Current.TrayShowCategoryIcon;
             root["historyEnabled"] = Current.HistoryEnabled;
             root["portableMode"] = IsPortable;
             root["firstRunHintShown"] = Current.FirstRunHintShown;
             root["startWithPanel"] = Current.StartWithPanel;
+            root["taskbarWidgetEnabled"] = Current.TaskbarWidgetEnabled;
+            root["taskbarOffsetX"] = Current.TaskbarOffsetX;
+            root["allowVoltageEstimate"] = Current.AllowVoltageEstimate;
             root["panelPositionSaved"] = Current.PanelPositionSaved;
             root["panelX"] = Current.PanelX;
             root["panelY"] = Current.PanelY;
@@ -1257,6 +1274,7 @@ namespace DeviceBattery
             if (string.Equals(value, "mouse", StringComparison.OrdinalIgnoreCase)) return "mouse";
             if (string.Equals(value, "keyboard", StringComparison.OrdinalIgnoreCase)) return "keyboard";
             if (string.Equals(value, "headset", StringComparison.OrdinalIgnoreCase)) return "headset";
+            if (string.Equals(value, "gamepad", StringComparison.OrdinalIgnoreCase)) return "gamepad";
             return "auto";
         }
 

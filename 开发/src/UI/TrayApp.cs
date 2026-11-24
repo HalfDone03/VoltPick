@@ -39,6 +39,11 @@ namespace DeviceBattery
 
         private HistoryForm _historyForm;
         private SettingsForm _settingsForm;
+        private TaskbarWidget _taskbarWidget;
+
+        // 任务栏条点击某台设备时用：把托盘固定到该设备并打开面板。
+        // 只暴露这一个动作，避免把整个 TrayApp 实例暴露出去。
+        internal static Action<string> SelectDeviceAndShowPanel;
         private BatterySnapshot _snapshot = new BatterySnapshot();
         private int _iconSize;
         private bool _renderPending;
@@ -150,6 +155,27 @@ namespace DeviceBattery
             _startupTimer.Tick += delegate { _startupTimer.Stop(); OnStartupTick(); };
             _startupTimer.Start();
 
+            // 任务栏小组件是实验性可选功能：默认关闭，开启失败也会自动回退托盘。
+            SelectDeviceAndShowPanel = delegate(string deviceId)
+            {
+                AppSettings.Current.TrayDeviceId = deviceId ?? "";
+                AppSettings.Current.IconDevice = "auto";
+                try { AppSettings.Save(); } catch (Exception) { }
+                try
+                {
+                    _host.BeginInvoke(new Action(delegate
+                    {
+                        ShowPanel();
+                        RefreshUi();
+                    }));
+                }
+                catch (Exception ex) { Log.Warn("任务栏条选择设备失败：" + ex.Message); }
+            };
+            if (AppSettings.Current.TaskbarWidgetEnabled)
+            {
+                StartTaskbarWidget();
+            }
+
             AutoStart.RepairPathIfNeeded();
             SingleInstance.ShowRequested = delegate
             {
@@ -208,9 +234,50 @@ namespace DeviceBattery
             }
         }
 
+        private void StartTaskbarWidget()
+        {
+            if (_taskbarWidget != null)
+            {
+                return;
+            }
+            try
+            {
+                _taskbarWidget = new TaskbarWidget();
+                _taskbarWidget.SetSnapshot(_snapshot);
+                _taskbarWidget.Start();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("任务栏小组件启动失败：" + ex.Message);
+                StopTaskbarWidget();
+            }
+        }
+
+        private void StopTaskbarWidget()
+        {
+            if (_taskbarWidget == null)
+            {
+                return;
+            }
+            try { _taskbarWidget.Stop(); _taskbarWidget.Dispose(); }
+            catch (Exception) { }
+            _taskbarWidget = null;
+        }
+
         private void RefreshUi()
         {
             _snapshot = _service.GetSnapshot();
+            if (_taskbarWidget != null && !_taskbarWidget.IsDisposed)
+            {
+                if (_taskbarWidget.Failed)
+                {
+                    StopTaskbarWidget();
+                }
+                else
+                {
+                    _taskbarWidget.SetSnapshot(_snapshot);
+                }
+            }
             if (AppSettings.Current.DisplayMode == "separate")
             {
                 RenderSeparate();
@@ -283,7 +350,7 @@ namespace DeviceBattery
             if (primary != null && primary.HasValue)
             {
                 text = primary.PercentOrZero.ToString();
-                color = Theme.StatusColor(primary.Status, primary.PercentOrZero);
+                color = TaskbarStripStyle.TrayIconColor(primary);
                 dim = primary.Status == DeviceStatus.Stale ||
                       primary.Status == DeviceStatus.Sleeping ||
                       primary.Status == DeviceStatus.Offline ||
@@ -315,7 +382,8 @@ namespace DeviceBattery
                 }
             }
 
-            SetIconFor(_tray, text, color, dim, charging);
+            SetIconFor(_tray, text, color, dim, charging,
+                primary == null ? DeviceCategory.Unknown : primary.Category);
             _tray.Text = Clip(tooltip, 63);
         }
 
@@ -339,14 +407,14 @@ namespace DeviceBattery
                 DeviceState device = enabled[i];
                 icon.Visible = true;
                 string text = device.HasValue ? device.PercentOrZero.ToString() : "—";
-                Color color = device.HasValue ? Theme.StatusColor(device.Status, device.PercentOrZero) : Theme.Faint;
+                Color color = TaskbarStripStyle.TrayIconColor(device);
                 bool dim = !device.HasValue ||
                            device.Status == DeviceStatus.Stale ||
                            device.Status == DeviceStatus.Sleeping ||
                            device.Status == DeviceStatus.Offline ||
                            device.Status == DeviceStatus.Unsupported;
                 bool charging = device.Status == DeviceStatus.Charging;
-                SetIconFor(icon, text, color, dim, charging);
+                SetIconFor(icon, text, color, dim, charging, device.Category);
                 icon.Text = Clip(device.DisplayName + " " + (device.HasValue ? device.PercentOrZero + "%" : device.StatusText), 63);
             }
         }
@@ -795,18 +863,25 @@ namespace DeviceBattery
             return bluetooth + " · " + hidden + " 台已隐藏";
         }
 
-        private void SetIconFor(NotifyIcon target, string text, Color color, bool dim, bool charging)
+        private void SetIconFor(NotifyIcon target, string text, Color color, bool dim, bool charging,
+            DeviceCategory category = DeviceCategory.Unknown)
         {
+            bool withCategory = AppSettings.Current.TrayShowCategoryIcon &&
+                IconFactory.CanDrawCategoryGlyph(_iconSize, category);
             string key = _iconSize + "|" + text + "|" + color.ToArgb() + "|" + dim + "|" +
                          charging + "|" + AppSettings.Current.DigitPercent + "|" + AppSettings.Current.IconStyle +
-                         "|" + AppSettings.Current.IconFont;
+                         "|" + AppSettings.Current.IconFont + "|" + withCategory + "|" + category;
             if (string.Equals(target.Tag as string, key, StringComparison.Ordinal))
             {
                 return;
             }
 
-            Icon icon = IconFactory.BuildDigits(_iconSize, text, color, dim, AppSettings.Current.DigitPercent,
-                charging, AppSettings.Current.IconStyle, AppSettings.Current.IconFont);
+            Icon icon = withCategory
+                ? IconFactory.BuildDigitsWithCategory(_iconSize, text, color, dim,
+                    AppSettings.Current.DigitPercent, charging, AppSettings.Current.IconStyle,
+                    AppSettings.Current.IconFont, category)
+                : IconFactory.BuildDigits(_iconSize, text, color, dim, AppSettings.Current.DigitPercent,
+                    charging, AppSettings.Current.IconStyle, AppSettings.Current.IconFont);
             Icon previous = target.Icon;
             target.Icon = icon;
             target.Tag = key;
@@ -902,6 +977,12 @@ namespace DeviceBattery
                               AppSettings.Current.IconDevice == "headset";
             headset.Click += delegate { SetTraySource("", "headset"); };
             _traySourceItem.DropDownItems.Add(headset);
+
+            ToolStripMenuItem gamepad = new ToolStripMenuItem("固定手柄");
+            gamepad.Checked = string.IsNullOrEmpty(AppSettings.Current.TrayDeviceId) &&
+                              AppSettings.Current.IconDevice == "gamepad";
+            gamepad.Click += delegate { SetTraySource("", "gamepad"); };
+            _traySourceItem.DropDownItems.Add(gamepad);
 
             List<DeviceState> connected = DeviceVisibility.ConnectedDevices(_snapshot);
             if (connected.Count > 0)
@@ -1081,6 +1162,15 @@ namespace DeviceBattery
             form.Applied += delegate
             {
                 ApplySettingsChanged(false);
+                // 任务栏小组件开关可能刚刚变了。
+                if (AppSettings.Current.TaskbarWidgetEnabled)
+                {
+                    StartTaskbarWidget();
+                }
+                else
+                {
+                    StopTaskbarWidget();
+                }
                 if (form.NeedsImmediateRefresh)
                 {
                     _service.RequestRefreshAll();
@@ -1151,7 +1241,7 @@ namespace DeviceBattery
                 _panel.CloseEmbeddedView();
             }
             DeviceState selected = ChooseAggregateDevice();
-            HistoryForm form = new HistoryForm(selected == null ? null : selected.Id);
+            HistoryForm form = new HistoryForm(selected == null ? null : selected.Id, _service.GetSnapshot());
             form.FormClosed += delegate
             {
                 _historyForm = null;
@@ -1433,6 +1523,7 @@ namespace DeviceBattery
             {
             }
             try { AppSettings.FlushKnownDevices(); } catch (Exception) { }
+            StopTaskbarWidget();
 
             try
             {

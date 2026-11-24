@@ -8,7 +8,8 @@ namespace DeviceBattery
         Unknown = 0,
         Mouse = 1,
         Headset = 2,
-        Keyboard = 3
+        Keyboard = 3,
+        Gamepad = 4
     }
 
     internal enum TransportKind
@@ -136,6 +137,12 @@ namespace DeviceBattery
         public int CurrentIntervalSeconds = 600;
 
         /// <summary>
+        /// 这个协议要求的最小查询间隔（秒，0 = 跟随全局设置）。有的接收器问得太勤
+        /// 会重启或一直被唤醒，Discover 时从 VendorProtocol.MinQuerySeconds 带过来。
+        /// </summary>
+        public int MinIntervalSeconds = 0;
+
+        /// <summary>
         /// 待确认的跳变值（-1 表示没有挂起）。设备侧电量计会在两个稳定状态之间
         /// 切换（实测 ATK 鼠标 40% / 55%），大跳变要连续两次读到同一个新值才生效。
         /// </summary>
@@ -172,6 +179,7 @@ namespace DeviceBattery
                 if (Category == DeviceCategory.Mouse) return "鼠标";
                 if (Category == DeviceCategory.Keyboard) return "键盘";
                 if (Category == DeviceCategory.Headset) return "耳机";
+                if (Category == DeviceCategory.Gamepad) return "手柄";
                 return "设备";
             }
         }
@@ -263,6 +271,7 @@ namespace DeviceBattery
             copy.LastWarnPercent = LastWarnPercent;
             copy.LastWarnTime = LastWarnTime;
             copy.CurrentIntervalSeconds = CurrentIntervalSeconds;
+            copy.MinIntervalSeconds = MinIntervalSeconds;
             copy.PendingPercent = PendingPercent;
             copy.ConfirmCount = ConfirmCount;
             copy.ForceVisible = ForceVisible;

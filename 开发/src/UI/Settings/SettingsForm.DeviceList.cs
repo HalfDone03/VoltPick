@@ -81,6 +81,7 @@ namespace DeviceBattery
             if (string.Equals(category, "鼠标", StringComparison.Ordinal)) { return 0; }
             if (string.Equals(category, "耳机", StringComparison.Ordinal)) { return 1; }
             if (string.Equals(category, "键盘", StringComparison.Ordinal)) { return 2; }
+            if (string.Equals(category, "手柄", StringComparison.Ordinal)) { return 3; }
             return 3;
         }
 
