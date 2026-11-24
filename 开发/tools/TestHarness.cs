@@ -13,8 +13,8 @@ internal static class TestHarness
     // AGENTS.md 要求自测零失败。只判 _failed 的话，删掉一条测试也会"通过"，
     // 所以把期望条数也钉死：新增/删除断言后必须同步改这里。
     // 305（基线）+ 23（键盘）+ 38（耳机）+ 23（鼠标）+ 10（手柄）+ 7（AirPods）
-    //   + 19（历史统计）+ 5（新增设置项）+ 31（任务栏显示含托盘色）+ 8（托盘类别图标）= 469。
-    private const int ExpectedChecks = 469;
+    //   + 19（历史统计）+ 5（新增设置项）+ 31（任务栏显示含托盘色）+ 8（托盘类别图标）= 470。
+    private const int ExpectedChecks = 470;
 
     private static int _passed;
     private static int _failed;
@@ -438,6 +438,55 @@ internal static class TestHarness
             " small=" + plainSmall[0] + "/" + plainSmall[1] + "/" + plainSmall[2] + "/" + plainSmall[3] +
             " smallH=" + plainSmallHeight[0] + "/" + plainSmallHeight[1] + "/" + plainSmallHeight[2] + "/" + plainSmallHeight[3] +
             " w=" + plainWidth[3] + " fonts=" + fontDetail.ToString().Trim());
+
+        // 100% 三位数不能缺字：显式字体下若临时层太小，"100" 会被裁成 "10" 的残片，
+        // 剩下的两位之间会露出 >=2 列的空白断口。逐列统计墨迹，任何 >=2 列的连续
+        // 空白（且前后都有墨迹）都说明有数字被裁掉。
+        int threeDigitErrors = 0;
+        StringBuilder threeDigitDetail = new StringBuilder();
+        for (int fi = 0; fi < AppSettings.IconFontLabels.Length; fi++)
+        {
+            string fontKey = AppSettings.IconFontKey(fi);
+            for (int styleIndex = 0; styleIndex < 3; styleIndex++)
+            {
+                string style = styleIndex == 0 ? "classic" : (styleIndex == 1 ? "rounded" : "soft");
+                using (Icon icon = IconFactory.BuildDigits(16, "100", Theme.Green, false, 80, false, style, fontKey))
+                using (Bitmap bitmap = icon.ToBitmap())
+                {
+                    int[] cols = new int[16];
+                    for (int y = 0; y < 16; y++)
+                    {
+                        for (int x = 0; x < 16; x++)
+                        {
+                            if (bitmap.GetPixel(x, y).A > 40) { cols[x]++; }
+                        }
+                    }
+                    int worstRun = 0;
+                    int blankRun = 0;
+                    bool seen = false;
+                    for (int x = 0; x < 16; x++)
+                    {
+                        if (cols[x] > 0)
+                        {
+                            seen = true;
+                            blankRun = 0;
+                        }
+                        else if (seen)
+                        {
+                            blankRun++;
+                            if (blankRun > worstRun) { worstRun = blankRun; }
+                        }
+                    }
+                    if (worstRun >= 2)
+                    {
+                        threeDigitErrors++;
+                        threeDigitDetail.Append(fontKey + "/" + style + " gap=" + worstRun + " ");
+                    }
+                }
+            }
+        }
+        Check("托盘三位数 100 在所有字体与样式下完整显示", threeDigitErrors == 0,
+            "缺陷=" + threeDigitErrors + " " + threeDigitDetail.ToString().Trim());
 
         try
         {

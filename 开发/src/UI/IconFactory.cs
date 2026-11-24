@@ -567,7 +567,11 @@ namespace DeviceBattery
             // RenderDigits 内部已经在按 2 倍画布超采样后再缩回 layerSize，所以这里给的就是最终
             // 尺寸——再乘 2 会让字形溢出 16px 画布被裁掉一圈。
             // 临时画布比图标大一圈：字号试探时溢出部分不被裁掉，量的才是真实字形。
-            int layerSize = canvas + 8;
+            // 三位数（100）在显式字体下比两位数宽得多：24px 层里画微软雅黑 Bold 16px
+            // 的 "100" 会被裁成两位的残片，MeasureInk 量到残片宽度反而"塞得下"，
+            // 于是把缺一位的图标贴出去。三位数把层加大到 canvas+16，让真实字形
+            // 完整落在层里，字号下探循环才能挑到三个字符都塞得下的档位。
+            int layerSize = canvas + (text.Length >= 3 ? 16 : 8);
             float slotScale = s / 16f;
             // 类别图标模式：数字只画在右侧区域里，宽度与中心都按该区域算。
             float contentLeft = content.HasValue ? content.Value.Left : 0f;
@@ -581,8 +585,10 @@ namespace DeviceBattery
             if (!string.IsNullOrEmpty(spec.Font))
             {
                 // 用户在设置里显式选了字体：以它为准，从最大可用字号往下试。
+                // 三位数收一档起试，避免一上来就给一个注定放不下的字号（16px 下
+                // "100" 用 16px 字肯定超宽，直接降到 12px 起步更快也更稳）。
                 DigitFont(spec.Font, out digitFamily, out digitWeight);
-                top = canvas;
+                top = text.Length >= 3 ? Math.Max(6, canvas - 4) : canvas;
             }
             else
             {
